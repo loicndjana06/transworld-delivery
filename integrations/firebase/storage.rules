@@ -1,0 +1,10 @@
+rules_version = '2';
+service firebase.storage {
+ match /b/{bucket}/o {
+  match /agencies/{agency}/shipments/{shipment}/{file} {
+   allow read: if request.auth != null && ((request.auth.token.admin == true && request.auth.token.agencyId == agency) || firestore.get(/databases/(default)/documents/shipments/$(shipment)).data.clientUid == request.auth.uid);
+   allow create: if request.auth != null && request.auth.token.admin == true && request.auth.token.agencyId == agency && request.resource.size <= 10 * 1024 * 1024 && request.resource.contentType.matches('application/pdf|image/jpeg|image/png');
+   allow update,delete: if false;
+  }
+ }
+}
