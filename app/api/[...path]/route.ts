@@ -2,8 +2,9 @@ import {backupRoute} from '../../backup';
 import {businessRoutes,getDetails,detailData,companyData,documentKinds,unpack} from '../../business';
 import {sendPending} from '../../notifier';
 import {invoicePdf,orderPdf} from '../../invoice-pdf';
-import { env } from 'cloudflare:workers';
-import { getChatGPTUser } from '../../chatgpt-auth';
+import { runtimeEnv as env } from '@/lib/runtime';
+import { getAdminUser } from '@/lib/auth';
+import { isSupabaseConfigured } from '@/lib/supabase';
 import { clean,eventTypes,statusFromEvents,validActualDate } from '../../domain';
 export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'}});
@@ -11,15 +12,22 @@ const uuid=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(24))).map(x=>x.toString(16).padStart(2,'0')).join('');
 async function hash(s:string){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))).map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function handle(req:Request){
- const db=env.DB;if(!db)return json({error:'La base de données n’est pas disponible.'},503);
  const runtime=env as any;
- const url=new URL(req.url),p=url.pathname.split('/').filter(Boolean).slice(1),user=await getChatGPTUser(),owner=user?.userId;
+ const url=new URL(req.url),p=url.pathname.split('/').filter(Boolean).slice(1);
+ if(p[0]==='status'&&req.method==='GET'){
+  const sc=isSupabaseConfigured();
+  return json({configured:sc||!!(globalThis as any).__testEnv,supabaseConfigured:sc,mapsConfigured:Boolean(runtime.GOOGLE_MAPS_API_KEY),emailConfigured:Boolean(runtime.EMAIL_API_KEY&&runtime.EMAIL_FROM),missingVars:[!process.env.NEXT_PUBLIC_SUPABASE_URL?'NEXT_PUBLIC_SUPABASE_URL':null,!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?'NEXT_PUBLIC_SUPABASE_ANON_KEY':null,!process.env.SUPABASE_SERVICE_ROLE_KEY?'SUPABASE_SERVICE_ROLE_KEY':null].filter(Boolean)});
+ }
+ const db=env.DB;if(!db)return json({error:'Configuration Supabase requise. Renseignez NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY.',setupRequired:true},503);
+ const user=await getAdminUser(),owner=user?.userId;
  if(req.method!=='GET'&&req.headers.get('origin')!==url.origin)return json({error:'Requête non autorisée.'},403);
  if(p[0]==='admin-login'&&req.method==='POST'){
-  if(!owner)return json({error:'Connexion nécessaire.'},401);const b=await req.json() as any;
+  const b=await req.json() as any;
   if(!runtime.ADMIN_TEST_PASSWORD)return json({error:'Mot de passe de gestion non configuré.'},503);
   if(await hash(clean(b.password,200))!==await hash(runtime.ADMIN_TEST_PASSWORD))return json({error:'Mot de passe incorrect.'},403);
-  const secret=token();await db.prepare('INSERT INTO admin_sessions (id,owner,expires) VALUES (?,?,?)').bind(await hash(secret+runtime.ADMIN_TEST_PASSWORD),owner,new Date(Date.now()+4*3600000).toISOString()).run();return Response.json({ok:true},{headers:{'Cache-Control':'no-store','Set-Cookie':`kc_admin=${secret}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=14400`}});
+  const secret=token(),sessionOwner=owner||'admin';
+  await db.prepare('INSERT INTO admin_sessions (id,owner,expires) VALUES (?,?,?)').bind(await hash(secret+runtime.ADMIN_TEST_PASSWORD),sessionOwner,new Date(Date.now()+4*3600000).toISOString()).run();
+  return Response.json({ok:true},{headers:{'Cache-Control':'no-store','Set-Cookie':`kc_admin=${secret}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=14400`}});
  }
  if(p[0]==='admin-logout'&&req.method==='POST'){
   const cookie=(req.headers.get('cookie')||'').match(/(?:^|;\s*)kc_admin=([a-f0-9]{48})(?:;|$)/)?.[1];
@@ -128,7 +136,7 @@ async function handle(req:Request){
   const b=await req.json() as any,base=Number(b.base),ur=Number(b.usdRate),gr=Number(b.gnfRate);
   if(![base,ur,gr].every(v=>Number.isFinite(v)&&v>0)||!clean(b.reason)||!clean(b.stage)||!clean(b.provider)||!clean(b.signer)||!clean(b.rateSource))return json({error:'Montant, taux, source, prestation et signataire réel sont obligatoires.'},400);
   if(b.serviceId&&!await db.prepare('SELECT id FROM admin_models WHERE id=? AND owner=? AND kind=?').bind(clean(b.serviceId),owner,'service').first())return json({error:'Prestation inaccessible.'},403);
-  let issuer=await companyData(db,owner);if(!issuer.name||!issuer.address)return json({error:'Complétez l’identité réelle et l’adresse de l’entreprise dans Entreprise avant émission.'},400);const justification=clean(b.justificationDocument);if(justification&&!await db.prepare('SELECT id FROM documents WHERE id=? AND shipment_id=?').bind(justification,id).first())return json({error:'Justificatif inaccessible.'},403);const metadata=JSON.stringify({issuer,instructions:issuer.paymentInstructions||'',category:clean(b.serviceCategory),justificationDocument:justification,rateDate:clean(b.rateDate),serviceId:clean(b.serviceId)});
+  const issuer=await companyData(db,owner);if(!issuer.name||!issuer.address)return json({error:'Complétez l’identité réelle et l’adresse de l’entreprise dans Entreprise avant émission.'},400);const justification=clean(b.justificationDocument);if(justification&&!await db.prepare('SELECT id FROM documents WHERE id=? AND shipment_id=?').bind(justification,id).first())return json({error:'Justificatif inaccessible.'},403);const metadata=JSON.stringify({issuer,instructions:issuer.paymentInstructions||'',category:clean(b.serviceCategory),justificationDocument:justification,rateDate:clean(b.rateDate),serviceId:clean(b.serviceId)});
   const iid=uuid(),number='TD-'+new Date().getUTCFullYear()+'-'+token().slice(0,10).toUpperCase(),created=now(),usd=Math.round(base*ur*100)/100,gnf=Math.round(usd*gr);if(!Number.isFinite(usd)||!Number.isFinite(gnf)||usd<=0||gnf<=0||usd>1e12||gnf>9e15)return json({error:'Montant converti hors limites.'},400);
   await db.batch([db.prepare('INSERT INTO invoices (id,shipment_id,number,reason,stage,provider,signer,base_xaf,usd_rate,gnf_rate,rate_source,metadata,usd,gnf,status,created) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(iid,id,number,clean(b.reason,1000),clean(b.stage),clean(b.provider),clean(b.signer),base,ur,gr,clean(b.rateSource),metadata,usd,gnf,'a_regler',created),db.prepare('INSERT INTO notifications (id,owner,shipment_id,title,body,created,email_status,attempts) VALUES (?,?,?,?,?,?,?,0)').bind(uuid(),owner,id,'Facture disponible',`Une facture pour ${clean(b.reason)} est disponible : ${usd} USD, soit ${gnf} GNF. Consultez le PDF et contactez votre agence pour les instructions de paiement.`,created,'non_configure'),db.prepare('INSERT INTO audit (id,owner,shipment_id,action,detail,created) VALUES (?,?,?,?,?,?)').bind(uuid(),owner,id,'Facture émise',number,created)]);await sendPending(db,runtime,owner,id);return json({ok:true,id:iid});
  }

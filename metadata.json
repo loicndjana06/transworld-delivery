@@ -1,0 +1,8 @@
+{
+  "name": "TRANSWORLD DELIVERY",
+  "description": "Plateforme de suivi et de gestion des dossiers de transport de fret maritime et terrestre.",
+  "requestFeedback": false,
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

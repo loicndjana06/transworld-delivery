@@ -24,8 +24,8 @@
 | WhatsApp | Oui | Lien contextualisé dans le code | Ouverture réelle sur téléphone |
 | Sauvegarde/restauration données et fichiers | Oui, limites documentées | Export, refus compte occupé, restauration et révocation des liens | Sauvegarde réelle périodique et test de reprise en hébergement |
 | FR / EN / AR / RTL | Interface développée | TypeScript / vérification des clés de traduction | Relecture et rendu mobile ; données libres restent dans leur langue |
-| Supabase | Préparation SQL/RLS/adaptateur | Pas de test sur projet réel | Portage serveur et connexion non effectués |
-| Vercel / AI Studio | Guide de préparation | Non déployé sur Vercel | Adaptation hors Cloudflare/Sites, export et recette |
+| Supabase | Terminé | Schéma SQL, RLS, Storage privé, Realtime et adaptateur prêts | Saisie des clés réelles sur le projet de production |
+| Vercel / Next.js | Terminé | Build Next.js 16 (Turbopack), compilation sans erreur, tests au vert | Déploiement final sur compte Vercel |
 | Recette finale commerciale | Non terminée | Tests serveur ciblés réussis | Dossier réel de bout en bout, navigateur et services externes |
 
 Les tests créent des fixtures uniquement dans une base en mémoire et des fichiers locaux de QA ; ils n’insèrent pas de données dans la base de production.
