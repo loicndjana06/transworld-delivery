@@ -16,7 +16,7 @@ async function handle(req:Request){
  const url=new URL(req.url),p=url.pathname.split('/').filter(Boolean).slice(1);
  if(p[0]==='status'&&req.method==='GET'){
   const sc=isSupabaseConfigured();
-  return json({configured:sc||!!(globalThis as any).__testEnv,supabaseConfigured:sc,mapsConfigured:Boolean(runtime.GOOGLE_MAPS_API_KEY),emailConfigured:Boolean(runtime.EMAIL_API_KEY&&runtime.EMAIL_FROM),missingVars:[!process.env.NEXT_PUBLIC_SUPABASE_URL?'NEXT_PUBLIC_SUPABASE_URL':null,!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?'NEXT_PUBLIC_SUPABASE_ANON_KEY':null,!process.env.SUPABASE_SERVICE_ROLE_KEY?'SUPABASE_SERVICE_ROLE_KEY':null].filter(Boolean)});
+  return json({configured:sc||!!(globalThis as any).__testEnv,supabaseConfigured:sc,mapsConfigured:true,emailConfigured:Boolean(runtime.EMAIL_API_KEY?.trim()&&runtime.EMAIL_FROM?.trim()),missingVars:[!process.env.NEXT_PUBLIC_SUPABASE_URL?'NEXT_PUBLIC_SUPABASE_URL':null,!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?'NEXT_PUBLIC_SUPABASE_ANON_KEY':null,!process.env.SUPABASE_SERVICE_ROLE_KEY?'SUPABASE_SERVICE_ROLE_KEY':null].filter(Boolean)});
  }
  const db=env.DB;if(!db)return json({error:'Configuration Supabase requise. Renseignez NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY.',setupRequired:true},503);
  const user=await getAdminUser(),owner=user?.userId;
@@ -36,14 +36,20 @@ async function handle(req:Request){
  }
  if(p[0]==='config'&&req.method==='GET'){
   const ref=clean(url.searchParams.get('ref'),60);const target:any=ref?await db.prepare('SELECT owner FROM shipments WHERE ref=?').bind(ref).first():null;
-  const selectedOwner=target?.owner||owner;const cfg:any=selectedOwner?await db.prepare('SELECT maps_key,maps_id FROM settings WHERE owner=?').bind(selectedOwner).first():null;
-  return json({mapsKey:cfg?.maps_key||runtime.GOOGLE_MAPS_API_KEY||'',mapId:cfg?.maps_id||runtime.GOOGLE_MAPS_MAP_ID||'DEMO_MAP_ID'});
+  const selectedOwner=target?.owner||owner;const cfg:any=selectedOwner?await db.prepare('SELECT maps_key,maps_id,tile_url,tile_attribution FROM settings WHERE owner=?').bind(selectedOwner).first():null;
+  return json({
+    tileUrl:cfg?.tile_url||runtime.MAP_TILE_URL||'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution:cfg?.tile_attribution||runtime.MAP_TILE_ATTRIBUTION||'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+    mapsKey:cfg?.maps_key||runtime.GOOGLE_MAPS_API_KEY||'',
+    mapId:cfg?.maps_id||runtime.GOOGLE_MAPS_MAP_ID||'DEMO_MAP_ID'
+  });
  }
  if(p[0]==='tracking'&&req.method==='GET'){
   const ref=clean(url.searchParams.get('ref'),60).toUpperCase();if(!/^KC-[A-F0-9]{16}$/.test(ref))return json({error:'Aucun dossier trouvé. Vérifiez votre référence.'},404);
   const s:any=await db.prepare('SELECT * FROM shipments WHERE ref=?').bind(ref).first();if(!s)return json({error:'Aucun dossier trouvé. Vérifiez votre référence.'},404);
   const access=url.searchParams.get('access')||'',privateAccess=s.owner===owner||(access&&s.token_hash===await hash(access)&&s.token_expiry>now());
-  const events=(await db.prepare('SELECT id,type,place,date,note,planned,published,created,published_at,lat,lng,mode FROM events WHERE shipment_id=? AND published=1 ORDER BY date,created').bind(s.id).all()).results;
+  const rawEvents=(await db.prepare('SELECT id,type,place,date,note,planned,published,created,published_at,lat,lng,mode FROM events WHERE shipment_id=? AND published=1 ORDER BY date,created').bind(s.id).all()).results;
+  const events=rawEvents.map((e:any)=>({...e,note:privateAccess?e.note:''}));
   const extra=privateAccess?await getDetails(db,s.id):{};
   const documents=privateAccess?(await db.prepare('SELECT d.id,d.name,d.mime,d.size,d.created,dd.kind FROM documents d LEFT JOIN document_details dd ON dd.document_id=d.id WHERE d.shipment_id=? AND d.shared=1 ORDER BY created DESC').bind(s.id).all()).results:[];
   const notices=privateAccess?(await db.prepare('SELECT id,title,body,created FROM notifications WHERE shipment_id=? ORDER BY created DESC LIMIT 30').bind(s.id).all()).results:[];
@@ -99,9 +105,9 @@ async function handle(req:Request){
  const business=await businessRoutes(req,p,db,owner,runtime);if(business)return business;
  if(p[0]==='requests'&&req.method==='GET')return json((await db.prepare('SELECT * FROM requests WHERE owner=? ORDER BY created DESC').bind(owner).all()).results);
  if(p[0]==='settings'){
-  if(req.method==='GET')return json(await db.prepare('SELECT maps_key,maps_id FROM settings WHERE owner=?').bind(owner).first()||{maps_key:'',maps_id:''});
-  const b=await req.json() as any;if(b.maps_key&&!/^[a-zA-Z0-9_-]{20,100}$/.test(b.maps_key))return json({error:'Format de clé Google Maps invalide.'},400);
-  await db.prepare('INSERT INTO settings (id,owner,maps_key,maps_id) VALUES (?,?,?,?) ON CONFLICT(owner) DO UPDATE SET maps_key=excluded.maps_key,maps_id=excluded.maps_id').bind(owner,owner,clean(b.maps_key,100),clean(b.maps_id,100)).run();return json({ok:true});
+  if(req.method==='GET')return json(await db.prepare('SELECT maps_key,maps_id,tile_url,tile_attribution FROM settings WHERE owner=?').bind(owner).first()||{maps_key:'',maps_id:'',tile_url:'',tile_attribution:''});
+  const b=await req.json() as any;
+  await db.prepare('INSERT INTO settings (id,owner,maps_key,maps_id,tile_url,tile_attribution) VALUES (?,?,?,?,?,?) ON CONFLICT(owner) DO UPDATE SET maps_key=excluded.maps_key,maps_id=excluded.maps_id,tile_url=excluded.tile_url,tile_attribution=excluded.tile_attribution').bind(owner,owner,clean(b.maps_key,100),clean(b.maps_id,100),clean(b.tile_url,255),clean(b.tile_attribution,255)).run();return json({ok:true});
  }
  if(p[0]==='export'&&req.method==='GET')return json({version:1,shipments:(await db.prepare('SELECT * FROM shipments WHERE owner=?').bind(owner).all()).results.map((x:any)=>{const{token_hash,token_expiry,...rest}=x;return rest;}),events:(await db.prepare('SELECT e.* FROM events e JOIN shipments s ON s.id=e.shipment_id WHERE s.owner=?').bind(owner).all()).results,invoices:(await db.prepare('SELECT i.* FROM invoices i JOIN shipments s ON s.id=i.shipment_id WHERE s.owner=?').bind(owner).all()).results});
  if(p[0]==='audit'&&req.method==='GET')return json((await db.prepare('SELECT a.action,a.detail,a.created,s.ref FROM audit a LEFT JOIN shipments s ON s.id=a.shipment_id WHERE a.owner=? ORDER BY a.created DESC LIMIT 100').bind(owner).all()).results);

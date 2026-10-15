@@ -36,6 +36,12 @@ if (existsSync(drizzleDir)) {
       console.warn(`Error running migration ${f}:`, e);
     }
   }
+  try {
+    dbInstance.exec('ALTER TABLE settings ADD COLUMN tile_url text NOT NULL DEFAULT "";');
+  } catch {}
+  try {
+    dbInstance.exec('ALTER TABLE settings ADD COLUMN tile_attribution text NOT NULL DEFAULT "";');
+  } catch {}
 }
 
 class Statement {
@@ -199,6 +205,12 @@ export const runtimeEnv = {
   },
   get GOOGLE_MAPS_MAP_ID() {
     return (globalThis as any).__testEnv?.GOOGLE_MAPS_MAP_ID || process.env.GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
+  },
+  get MAP_TILE_URL() {
+    return (globalThis as any).__testEnv?.MAP_TILE_URL || process.env.MAP_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  },
+  get MAP_TILE_ATTRIBUTION() {
+    return (globalThis as any).__testEnv?.MAP_TILE_ATTRIBUTION || process.env.MAP_TILE_ATTRIBUTION || '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
   },
   get EMAIL_API_KEY() {
     return (globalThis as any).__testEnv?.EMAIL_API_KEY || process.env.EMAIL_API_KEY || '';

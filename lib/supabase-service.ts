@@ -26,8 +26,8 @@ export function checkConfiguration() {
   return {
     configured,
     supabaseConfigured: configured,
-    mapsConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY),
-    emailConfigured: Boolean(process.env.EMAIL_API_KEY && process.env.EMAIL_FROM),
+    mapsConfigured: true,
+    emailConfigured: Boolean(process.env.EMAIL_API_KEY?.trim() && process.env.EMAIL_FROM?.trim()),
     missingVars: [
       !process.env.NEXT_PUBLIC_SUPABASE_URL ? 'NEXT_PUBLIC_SUPABASE_URL' : null,
       !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? 'NEXT_PUBLIC_SUPABASE_ANON_KEY' : null,
@@ -208,7 +208,10 @@ export async function getTrackingData(ref: string, accessSecret?: string, owner?
         orderGnf: s.order_gnf,
       } : {}),
     },
-    events: events || [],
+    events: (events || []).map((e: any) => ({
+      ...e,
+      note: privateAccess ? e.note : '',
+    })),
     documents,
     privateAccess,
   };
@@ -646,8 +649,8 @@ export async function saveAdminModel(owner: string, b: any) {
 export async function getSettings(owner: string) {
   const supabase = getSupabaseAdminClient();
   if (!supabase) throw new Error('Supabase non configuré');
-  const { data } = await supabase.from('settings').select('maps_key, maps_id').eq('owner', owner).maybeSingle();
-  return data || { maps_key: '', maps_id: '' };
+  const { data } = await supabase.from('settings').select('maps_key, maps_id, tile_url, tile_attribution').eq('owner', owner).maybeSingle();
+  return data || { maps_key: '', maps_id: '', tile_url: '', tile_attribution: '' };
 }
 
 export async function saveSettings(owner: string, b: any) {
@@ -661,7 +664,9 @@ export async function saveSettings(owner: string, b: any) {
     owner,
     maps_key: clean(b.maps_key, 100),
     maps_id: clean(b.maps_id, 100),
-  });
+    tile_url: clean(b.tile_url, 255),
+    tile_attribution: clean(b.tile_attribution, 255),
+  }, { onConflict: 'owner' });
   if (error) throw new Error(error.message);
   return { ok: true };
 }

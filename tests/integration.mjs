@@ -2,8 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createRequire} from 'node:module';
 import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
-const require=createRequire(import.meta.url);
-const esbuild=await import(require.resolve('esbuild',{paths:[require.resolve('wrangler/package.json')]}));
+import esbuild from 'esbuild';
 const database=new DatabaseSync(':memory:');database.exec('PRAGMA foreign_keys=ON');
 for(const f of readdirSync('drizzle').filter(x=>x.endsWith('.sql')).sort())database.exec(readFileSync('drizzle/'+f,'utf8'));
 class Statement{constructor(sql,args=[]){this.sql=sql;this.args=args}bind(...a){return new Statement(this.sql,a)}async first(){return database.prepare(this.sql).get(...this.args)||null}async all(){return{results:database.prepare(this.sql).all(...this.args),meta:{changes:0}}}async run(){const r=database.prepare(this.sql).run(...this.args);return{meta:{changes:Number(r.changes)},results:[]}}}
@@ -75,6 +74,13 @@ const originalFetch=globalThis.fetch;globalThis.__testEnv.EMAIL_API_KEY='mock';g
 assert.equal((await call('shipments/'+id+'/retry-mail',{})).status,200);
 assert.ok((await call('shipments/'+id)).data.notices.some(n=>n.email_status==='echec'&&n.attempts>0));
 globalThis.fetch=originalFetch;delete globalThis.__testEnv.EMAIL_API_KEY;delete globalThis.__testEnv.EMAIL_FROM;
+const st=(await call('status',undefined,null)).data;
+assert.equal(st.emailConfigured,false);
+assert.ok(!st.missingVars.includes('EMAIL_API_KEY')&&!st.missingVars.includes('EMAIL_FROM'));
+assert.equal((await call('shipments/'+id+'/retry-mail',{})).status,200);
+assert.ok((await call('shipments/'+id)).data.notices.every(n=>n.email_status!=='envoye'));
+assert.ok((await call('shipments/'+id)).data.notices.some(n=>n.email_status==='non_configure'));
+assert.equal((await call('config?ref='+ref,undefined,null)).data.mapsKey,'AIzaExampleKey1234567890123456789012345');
 
 // Real business operations: models, isolation, corrected records and complete backup.
 let svc=await call('models',{kind:'service',name:'Transport vérifié',config:{category:'Transport',provider:'Prestataire test',base_xaf:500,reviewed:true}});assert.equal(svc.status,200);
