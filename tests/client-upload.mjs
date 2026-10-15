@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import esbuild from 'esbuild';
+await esbuild.build({entryPoints:['lib/client-upload.ts'],outfile:'.sites-runtime/client-upload.mjs',bundle:true,platform:'node',format:'esm'});
+const {uploadPrivateFile}=await import('../.sites-runtime/client-upload.mjs');
+const calls=[];
+globalThis.fetch=async(url,init)=>{
+ calls.push({url:String(url),init});
+ if(url==='/api/upload-intent')return Response.json({id:'intent',url:'https://private-storage.test/upload?token=isolated'});
+ if(url==='/api/upload-finalize')return Response.json({ok:true,id:'intent'});
+ return new Response('{}');
+};
+const data=new Uint8Array(5*1024*1024);data.set(new TextEncoder().encode('%PDF-1.7\n'));
+const file=new File([data],'invoice.pdf',{type:'application/pdf'});
+assert.equal((await uploadPrivateFile(file,{shipmentId:'private-shipment',shared:false})).ok,true);
+assert.equal(calls.length,3);
+assert.equal(calls[0].url,'/api/upload-intent');assert.ok(calls[0].init.body.length<1024);
+assert.match(calls[1].url,/^https:\/\/private-storage.test/);assert.equal(calls[1].init.method,'PUT');assert.equal(calls[1].init.body.size,5*1024*1024);
+assert.equal(calls[2].url,'/api/upload-finalize');assert.ok(calls[2].init.body.length<1024);
+await assert.rejects(uploadPrivateFile(new File(['fake'],'fake.pdf'),{}),/vrai PDF/);
+assert.equal(calls.length,3,'Invalid content never starts an upload');
+console.log('PASS — browser upload contract: only small JSON calls reach Vercel; 5 MiB bytes go directly to signed private storage.');

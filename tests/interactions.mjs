@@ -1,0 +1,89 @@
+import assert from 'node:assert/strict';
+import {mock} from 'node:test';
+import {JSDOM} from 'jsdom';
+import esbuild from 'esbuild';
+import React, {act} from 'react';
+import {renderToString} from 'react-dom/server';
+await esbuild.build({entryPoints:['app/cargo.tsx'],outfile:'.sites-runtime/ui.mjs',bundle:true,platform:'node',format:'esm',jsx:'automatic',packages:'external',external:['react','react-dom','react-dom/*']});
+const {default:Cargo}=await import('../.sites-runtime/ui.mjs');
+const html=renderToString(React.createElement(Cargo,{signedIn:false,displayName:''}));
+const dom=new JSDOM('<!DOCTYPE html><html lang="fr"><body><div id="root">'+html+'</div></body></html>',{url:'https://cargo.test/'});
+for(const name of ['window','document','HTMLElement','HTMLDialogElement','FormData','File','Event','MouseEvent','localStorage'])Object.defineProperty(globalThis,name,{value:dom.window[name],configurable:true});
+globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+window.scrollTo=()=>{};
+HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
+const requests=[];
+globalThis.fetch=async(path,init)=>{
+ requests.push([path,init]);
+ if(path==='/api/status')return Response.json({configured:true,supabaseConfigured:true});
+ if(path==='/api/admin-login')return Response.json({ok:true});
+ return Response.json([]);
+};
+const {hydrateRoot}=await import('react-dom/client');
+let root;
+const hydrationErrors=[];
+await act(async()=>{root=hydrateRoot(document.getElementById('root'),React.createElement(Cargo,{signedIn:false,displayName:''}),{onRecoverableError:e=>hydrationErrors.push(e.message)});});
+assert.deepEqual(hydrationErrors,[],'Homepage hydrates without recoverable errors');
+for(const path of ['/a-propos','/services','/fonctionnement','/tarifs','/#tracking','/contact'])assert.ok(document.querySelector('nav a[href="'+path+'"]'),'Missing navigation '+path);
+const menu=document.querySelector('.mobile-menu');
+await act(async()=>menu.click());assert.ok(document.querySelector('.nav.open'));
+await act(async()=>menu.click());assert.equal(document.querySelector('.nav.open'),null);
+// Public service cards open a usable request form without admin login.
+await act(async()=>document.querySelector('.service-1').click());
+let quote=document.querySelector('dialog form');assert.ok(quote.querySelector('input[name=name]'));
+for(const [name,value]of Object.entries({name:'Isolated request',contact:'client@example.test',origin:'Origin',destination:'Destination'}))quote.querySelector('input[name='+name+']').value=value;
+await act(async()=>quote.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+assert.ok(requests.some(([p,init])=>p==='/api/requests'&&init.method==='POST'));
+assert.equal(document.querySelector('dialog'),null);
+const logo=document.querySelector('.brand-button');
+function pointer(type,x=0){const e=new MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:0});Object.defineProperty(e,'isPrimary',{value:true});Object.defineProperty(e,'pointerId',{value:1});logo.dispatchEvent(e);}
+mock.timers.enable({apis:['setTimeout']});
+await act(async()=>{pointer('pointerdown');mock.timers.tick(4000);pointer('pointerup');mock.timers.tick(7000);});
+assert.equal(document.querySelector('dialog'),null,'Release cancels hold');
+await act(async()=>{pointer('pointerdown');mock.timers.tick(4000);pointer('pointermove',30);mock.timers.tick(7000);});
+assert.equal(document.querySelector('dialog'),null,'Movement cancels hold');
+await act(async()=>{pointer('pointerdown');mock.timers.tick(9999);});
+assert.equal(document.querySelector('dialog'),null,'Must not open before ten seconds');
+await act(async()=>{mock.timers.tick(1);});
+assert.ok(document.querySelector('dialog[open]'),'Opens after ten seconds');
+await act(async()=>pointer('pointerup'));
+mock.timers.reset();
+const input=document.querySelector('input[name=password]');input.value='isolated-ui-test-password';
+await act(async()=>{document.querySelector('dialog form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));});
+assert.ok(requests.some(([p])=>p==='/api/admin-login'));
+assert.ok(document.querySelector('.dashboard'),'Admin panel opens immediately after successful login');
+assert.ok(requests.some(([p])=>p==='/api/shipments'),'Admin data requested without reload');
+const create=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Nouvelle expédition'));
+assert.ok(create);
+await act(async()=>create.click());
+assert.ok(document.querySelector('dialog input[name=client]'),'Real dossier form opens');
+// Advance the actual multi-step creation UI and verify each form opens.
+let creation=document.querySelector('dialog form');
+for(const [name,value]of Object.entries({client:'Isolated client',contact:'client@example.test',item:'Vehicle',purchaseReference:'External',firstInvoiceReference:'Invoice'}))creation.querySelector('input[name='+name+']').value=value;
+await act(async()=>creation.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+assert.ok(document.querySelector('dialog input[name=origin]'));
+creation=document.querySelector('dialog form');
+creation.querySelector('input[name=origin]').value='Origin';creation.querySelector('input[name=destination]').value='Destination';
+await act(async()=>creation.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+assert.ok(document.querySelector('dialog input[name=purchaseInvoice][required]'));
+await act(async()=>document.querySelector('.modal-head button').click());
+await act(async()=>root.unmount());
+for(const [view,title]of [['about','À propos'],['services','Nos services'],['process','Comment ça marche'],['pricing','Transport et frais'],['contact','Préparer mon envoi']]){
+ const markup=renderToString(React.createElement(Cargo,{signedIn:false,displayName:'',initialView:view}));
+ document.getElementById('root').innerHTML=markup;
+ await act(async()=>{root=hydrateRoot(document.getElementById('root'),React.createElement(Cargo,{signedIn:false,displayName:'',initialView:view}),{onRecoverableError:e=>hydrationErrors.push(e.message)});});
+ assert.equal(document.querySelector('.information-page h1').textContent,title);
+ const request=[...document.querySelectorAll('.information-actions button')][0];
+ await act(async()=>request.click());assert.ok(document.querySelector('dialog input[name=name]'),'Request works on '+view);
+ await act(async()=>document.querySelector('.modal-head button').click());
+ if(view==='contact'){
+  const locale=document.querySelector('.locale-switch select');locale.value='ar';
+  await act(async()=>locale.dispatchEvent(new Event('change',{bubbles:true})));
+  assert.equal(document.documentElement.dir,'rtl');assert.equal(document.documentElement.lang,'ar');
+  locale.value='fr';await act(async()=>locale.dispatchEvent(new Event('change',{bubbles:true})));
+ }
+ await act(async()=>root.unmount());
+}
+assert.deepEqual(hydrationErrors,[]);
+console.log('PASS — DOM: hydration, six navigation links, mobile menu, exact 10s logo hold, cancellation, admin login, three-step dossier form, public requests on all five information pages and RTL switch.');
+dom.window.close();

@@ -1,0 +1,17 @@
+TRANSWORLD DELIVERY — r2 — 2026-10-15T18:17:30.148721+00:00
+
+npm test: exit 0 (six suites isolees)
+PASS — bon de commande PDF privé, client autorisé et refus des autres clients.
+PASS — pays/modèles, duplication avec tarifs à vérifier, VIN, corrections historisées, factures rectificatives et sauvegarde/restauration avec fichiers.
+PASS — mot de passe, factures PDF, conversion privée, notifications, preuve et validation des paiements, coordonnées, export.
+PASS — création, CSRF, isolation, suivi privé, brouillons, publication, dates, concurrence, statut, estimation, lots, fichiers et révocation des liens.
+PASS — PostgreSQL: real hashed cookie session, sole admin UUID, SQL escaping, atomic rollback, RLS isolation, anonymous RPC, throttling and logout.
+PASS — DOM: hydration, six navigation links, mobile menu, exact 10s logo hold, cancellation, admin login, three-step dossier form, public requests on all five information pages and RTL switch.
+PASS — deployment workflow: signed 5 MiB private upload, content/expiry/access checks, idempotent finalization, private download redirect, proof versus funds, per-service payment gate, no invented movement, rectification, bounded backup, private new tables.
+PASS — browser upload contract: only small JSON calls reach Vercel; 5 MiB bytes go directly to signed private storage.
+
+npm run build: exit 0, compilation Next.js + TypeScript, routes generees.
+
+Le message SQL 23502 dans le journal integral est volontaire : test de rollback d une transaction invalide.
+Stockage/email simules uniquement pour les tests ; aucune connexion au compte Supabase du proprietaire.
+Pas de navigateur reel disponible : gestes/rendu mobile a verifier. Scripts PowerShell relus, non executes sur Windows.

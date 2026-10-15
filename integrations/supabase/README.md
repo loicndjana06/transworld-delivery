@@ -1,21 +1,13 @@
-# Préparation Supabase et Vercel
-Supabase est l'option externe retenue à la place de Firebase. Ces fichiers préparent l'intégration ; le Site courant reste connecté à D1/R2. Ajouter les clés ne change pas automatiquement les routes du Site.
+# Supabase — version Vercel
 
-## Informations nécessaires
-URL du projet et clé Publishable (ou ancienne clé anon). Ne pas mettre une clé Secret ou service_role dans le navigateur. Pour une connexion SSR, utiliser ensuite @supabase/ssr et la vérification des claims/utilisateurs côté serveur selon la documentation Supabase.
+Base existante avec migrations 01–04 déjà appliquées : ouvrir SUPABASE_MISE_A_JOUR.sql à la racine, copier tout le contenu dans SQL Editor et Run. Ce script applique 05 puis 06 sans supprimer de dossier ni refaire le bucket. Il est prévu pour être relancé si 05 existe déjà.
 
-## Mise en place sur un projet neuf
-1. Créer le projet, puis exécuter schema.sql dans SQL Editor après relecture. Aucun tarif ou dossier d'essai n'est inséré.
-2. Créer le compte administrateur dans Authentication. Créer une agence avec admin_uid égal à cet utilisateur et attribuer role=admin et agency_id dans app_metadata uniquement depuis un environnement serveur autorisé.
-3. Configurer NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY sur l'hébergement final.
-4. Adapter les routes actuelles à repository.ts, puis porter les opérations transactionnelles de publication, facturation, paiement, corrections et audit dans des fonctions serveur/RPC. addEvent seul n'actualise pas le statut : cette étape reste nécessaire.
-5. Porter les liens privés existants vers une connexion client ou une validation sécurisée du jeton côté serveur. Le RPC public renvoie uniquement le suivi expurgé, sans documents, coordonnées clients ni montant CFA.
-6. Migrer les données exportées, associer explicitement les comptes clients et transférer les fichiers privés. Ne pas copier les anciens jetons.
-7. Tester les règles sur le vrai projet : client A, client B, administrateur, visiteur anonyme ; vérifier que le montant CFA interne et les documents restent privés.
+Base neuve uniquement : schema.sql contient 01–06. Les fichiers modulaires peuvent également être exécutés dans leur ordre numérique. L’administrateur personnel est l’UUID 1d932391-a77a-4527-9b6d-1d7d4e884b4e ; le vérifier dans Authentication → Users avant utilisation.
 
-## Avant Vercel
-Le projet actuel utilise Vinext et cloudflare:workers. Il faut une version Next.js/Vite adaptée avec Supabase Auth et Storage, sans dépendance au runtime Cloudflare ni à la connexion Sites. Supabase ne rend pas à lui seul le dépôt actuel prêt à déployer sur Vercel.
+La couche serveur utilise cargo_execute, réservé à service_role. Le navigateur ne reçoit jamais cette clé. Les accès clients passent par les routes serveur avec référence et jeton autorisé ; aucune lecture anonyme directe des tables privées n’est ajoutée pour le rafraîchissement.
 
-Google Maps et les courriels gardent leurs propres configurations. Le service de courriel et ses clés restent côté serveur. La facturation et la génération PDF doivent être testées après migration. Les validations des paiements restent manuelles jusqu'à une intégration réelle du prestataire.
+cargo-documents reste privé, PDF/JPEG/PNG, 10 Mo. Les autorisations temporaires d’import sont créées côté serveur, les fichiers sont transférés directement à Storage et contrôlés avant enregistrement. Les téléchargements autorisés utilisent des liens signés de 60 secondes.
 
-Le schéma préparé inclut les modèles de pays/prestations, identité de l’entreprise, compléments VIN/remise, corrections de facture et historique des étapes. Il limite l’administration à admin_uid. Ce SQL n’a pas été exécuté sur votre projet ; les opérations serveur et les tests RLS restent à porter avant activation.
+Le suivi se rafraîchit par requête autorisée toutes les cinq secondes quand l’onglet est visible. La publication Realtime historique peut rester installée ; l’application ne dépend pas d’un abonnement anonyme aux tables.
+
+Variables et déploiement : voir COMMENCER_ICI.md et GUIDE_VARIABLES.md. Garder les emails vides s’ils ne sont pas configurés. Carte Leaflet/OpenStreetMap sans clé Google. Les quotas fournisseurs restent applicables.

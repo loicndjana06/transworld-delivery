@@ -1,18 +1,14 @@
-import {DatabaseSync} from 'node:sqlite';
 import {createRequire} from 'node:module';
 import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
-const require=createRequire(import.meta.url);
-const esbuild=await import(require.resolve('esbuild',{paths:[require.resolve('wrangler/package.json')]}));
-const database=new DatabaseSync(':memory:');database.exec('PRAGMA foreign_keys=ON');
-for(const f of readdirSync('drizzle').filter(x=>x.endsWith('.sql')).sort())database.exec(readFileSync('drizzle/'+f,'utf8'));
-class Statement{constructor(sql,args=[]){this.sql=sql;this.args=args}bind(...a){return new Statement(this.sql,a)}async first(){return database.prepare(this.sql).get(...this.args)||null}async all(){return{results:database.prepare(this.sql).all(...this.args),meta:{changes:0}}}async run(){const r=database.prepare(this.sql).run(...this.args);return{meta:{changes:Number(r.changes)},results:[]}}}
-const files=new Map();globalThis.__testEnv={ADMIN_TEST_PASSWORD:'test-password',DB:{prepare:sql=>new Statement(sql),batch:async qs=>{database.exec('BEGIN');try{const r=[];for(const q of qs)r.push(await q.run());database.exec('COMMIT');return r}catch(e){database.exec('ROLLBACK');throw e}}},BUCKET:{put:async(k,b)=>files.set(k,b),get:async k=>files.has(k)?{body:files.get(k)}:null,delete:async k=>files.delete(k)}};
+import esbuild from 'esbuild';
+import {database,testDb,Statement,pg} from './postgres-env.mjs';
+const files=new Map();globalThis.__testEnv={ADMIN_TEST_PASSWORD:'test-password',DB:testDb,BUCKET:{put:async(k,b)=>files.set(k,b),get:async k=>files.has(k)?{body:files.get(k)}:null,delete:async k=>files.delete(k)}};
 globalThis.__testUser={userId:'operator-a',email:'a@example.test',displayName:'A'};
 await esbuild.build({entryPoints:['app/api/[...path]/route.ts'],outfile:'.sites-runtime/api-test.mjs',bundle:true,format:'esm',platform:'node',plugins:[{name:'mock-platform',setup(build){build.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'stub'}));build.onResolve({filter:/chatgpt-auth$/},()=>({path:'auth',namespace:'stub'}));build.onLoad({filter:/.*/,namespace:'stub'},a=>({contents:a.path==='env'?'export const env=globalThis.__testEnv':'export async function getChatGPTUser(){return globalThis.__testUser}',loader:'js'}));}}]});
 const api=await import('../.sites-runtime/api-test.mjs');
 const cookies=new Map();
-async function call(path,body,user='operator-a',origin='https://cargo.test'){if(path==='shipments'&&body)body={purchaseReference:'ACHAT-TEST',firstInvoiceReference:'EXT-'+crypto.randomUUID(),...body};globalThis.__testUser=user?{userId:user,email:user+'@example.test',displayName:user}:null;const form=body instanceof FormData;const req=new Request('https://cargo.test/api/'+path,{method:body?'POST':'GET',headers:body?{origin,cookie:cookies.get(user)||'',...(!form?{'Content-Type':'application/json'}:{})}:{cookie:cookies.get(user)||''},body:body?(form?body:JSON.stringify(body)):undefined});const res=await(body?api.POST(req):api.GET(req));const cookie=res.headers.get('set-cookie');if(cookie)cookies.set(user,cookie.split(';')[0]);let data;if(res.headers.get('content-type')?.includes('application/json'))data=await res.json();else data=new Uint8Array(await res.arrayBuffer());return{status:res.status,data,headers:res.headers};}
+async function call(path,body,user='operator-a',origin='https://cargo.test'){if(body&&!(body instanceof FormData)&&(/\/invoices$/.test(path)||body.vehicleBase||body.kind==='Facture rectificative'))body={rateSource:'Isolated test source',rateDate:'2026-10-14',...body};if(path==='shipments'&&body)body={purchaseReference:'ACHAT-TEST',firstInvoiceReference:'EXT-'+crypto.randomUUID(),...body};globalThis.__testUser=user?{userId:user,email:user+'@example.test',displayName:user}:null;const form=body instanceof FormData;const req=new Request('https://cargo.test/api/'+path,{method:body?'POST':'GET',headers:body?{origin,cookie:cookies.get(user)||'',...(!form?{'Content-Type':'application/json'}:{})}:{cookie:cookies.get(user)||''},body:body?(form?body:JSON.stringify(body)):undefined});const res=await(body?api.POST(req):api.GET(req));const cookie=res.headers.get('set-cookie');if(cookie)cookies.set(user,cookie.split(';')[0]);let data;if(res.headers.get('content-type')?.includes('application/json'))data=await res.json();else data=new Uint8Array(await res.arrayBuffer());return{status:res.status,data,headers:res.headers};}
 assert.equal((await call('admin-login',{password:'bad'})).status,403);
 assert.equal((await call('admin-login',{password:'test-password'})).status,200);
 assert.equal((await call('admin-login',{password:'test-password'},'operator-b')).status,200);
@@ -68,13 +64,20 @@ assert.equal((await call('config',undefined,null)).status,200);
 assert.equal((await call('shipments/'+id+'/events',{...event,version:6,lat:100,lng:55,published:true})).status,400);
 assert.equal((await call('export')).status,200);
 const priced=await call('shipments',{...draft,item:'Prix de test',vehicleBase:5000000,vehicleUsdRate:.0017,vehicleGnfRate:8600});assert.equal(priced.status,201);
-const pt=(await call('tracking?ref='+priced.data.ref+'&access='+priced.data.access,undefined,null)).data;assert.equal(pt.shipment.orderUsd,8500);assert.equal(pt.shipment.vehicle_xaf,undefined);
+const pt=(await call('tracking?ref='+priced.data.ref+'&access='+priced.data.access,undefined,null)).data;assert.equal(pt.extra.purchaseRates,undefined);assert.equal(pt.shipment.orderUsd,8500);assert.equal(pt.shipment.vehicle_xaf,undefined);
 assert.equal((await call('settings',{maps_key:'AIzaExampleKey1234567890123456789012345',maps_id:'example-map'})).status,200);
 assert.equal((await call('config?ref='+ref,undefined,null)).data.mapsKey,'AIzaExampleKey1234567890123456789012345');
-const originalFetch=globalThis.fetch;globalThis.__testEnv.EMAIL_API_KEY='mock';globalThis.__testEnv.EMAIL_FROM='test@example.test';globalThis.fetch=async()=>new Response('{}',{status:503});
+const originalFetch=globalThis.fetch;globalThis.__testEnv.EMAIL_API_KEY='mock';globalThis.__testEnv.EMAIL_FROM='test@example.test';globalThis.fetch=async(input,init)=>String(input).startsWith('https://api.resend.com')?new Response('{}',{status:503}):originalFetch(input,init);
 assert.equal((await call('shipments/'+id+'/retry-mail',{})).status,200);
 assert.ok((await call('shipments/'+id)).data.notices.some(n=>n.email_status==='echec'&&n.attempts>0));
 globalThis.fetch=originalFetch;delete globalThis.__testEnv.EMAIL_API_KEY;delete globalThis.__testEnv.EMAIL_FROM;
+const st=(await call('status',undefined,null)).data;
+assert.equal(st.emailConfigured,false);
+assert.ok(!st.missingVars.includes('EMAIL_API_KEY')&&!st.missingVars.includes('EMAIL_FROM'));
+assert.equal((await call('shipments/'+id+'/retry-mail',{})).status,200);
+assert.ok((await call('shipments/'+id)).data.notices.every(n=>n.email_status!=='envoye'));
+assert.ok((await call('shipments/'+id)).data.notices.some(n=>n.email_status==='non_configure'));
+assert.equal((await call('config?ref='+ref,undefined,null)).data.mapsKey,'AIzaExampleKey1234567890123456789012345');
 
 // Real business operations: models, isolation, corrected records and complete backup.
 let svc=await call('models',{kind:'service',name:'Transport vérifié',config:{category:'Transport',provider:'Prestataire test',base_xaf:500,reviewed:true}});assert.equal(svc.status,200);
@@ -92,11 +95,11 @@ assert.equal((await call('shipments/'+id+'/details',{version:ds.shipment.version
 assert.equal((await call('shipments/'+id+'/details',{version:ds.shipment.version,vin:'JTDBR32E720123456'})).status,409);
 ds=(await call('shipments/'+id)).data;assert.equal(ds.extra.deliverySlot,'Matin');assert.equal((await call('tracking?ref='+ref,undefined,null)).data.extra.vin,undefined);
 const evt=ds.events[0];assert.equal((await call('shipments/'+id+'/correct-event',{...evt,eventId:evt.id,version:ds.shipment.version,place:'Lieu corrigé',reason:'Correction vérifiée'})).status,200);
-assert.ok(database.prepare('SELECT * FROM event_history WHERE event_id=?').get(evt.id));
+assert.ok((await database.prepare('SELECT * FROM event_history WHERE event_id=?').get(evt.id)));
 let issued=(await call('shipments/'+id+'/invoices',{base:1000,usdRate:.002,gnfRate:8000,reason:'Prestation vérifiée',stage:'Transit',provider:'Prestataire test',signer:'Responsable test',rateSource:'Source test et date',rateDate:'2026-10-14'})).data;
-const originalInvoice=database.prepare('SELECT * FROM invoices WHERE id=?').get(issued.id);assert.ok(JSON.parse(originalInvoice.metadata).issuer.name);
+const originalInvoice=(await database.prepare('SELECT * FROM invoices WHERE id=?').get(issued.id));assert.ok(JSON.parse(originalInvoice.metadata).issuer.name);
 let rect=await call('shipments/'+id+'/rectify',{invoiceId:issued.id,kind:'Avoir intégral',reason:'Prestation annulée',signer:'Responsable test'});assert.equal(rect.status,200);
-assert.equal(database.prepare('SELECT usd FROM invoices WHERE id=?').get(issued.id).usd,originalInvoice.usd);
+assert.equal((await database.prepare('SELECT usd FROM invoices WHERE id=?').get(issued.id)).usd,originalInvoice.usd);
 assert.equal((await call('shipments/'+id+'/paid',{invoiceId:issued.id,verified:true})).status,409);
 assert.equal((await call('rectification/'+rect.data.id,undefined,null)).status,403);
 assert.equal((await call('rectification/'+rect.data.id)).headers.get('content-type'),'application/pdf');
@@ -106,21 +109,21 @@ const order=await call('order/'+ref+'?access='+renewed.access,undefined,null);as
 
 const invoiceToCorrect=(await call('shipments/'+id+'/invoices',{base:2000,usdRate:.002,gnfRate:8000,reason:'Transport confirmé',stage:'Transit',provider:'Prestataire test',signer:'Responsable test',rateSource:'Source test'})).data;
 const changed=await call('shipments/'+id+'/rectify',{invoiceId:invoiceToCorrect.id,kind:'Facture rectificative',reason:'Montant réel corrigé',base:1800,usdRate:.002,gnfRate:8000,rateSource:'Source test',signer:'Responsable test'});assert.equal(changed.status,200);
-const replacement=JSON.parse(database.prepare('SELECT data FROM invoice_corrections WHERE id=?').get(changed.data.id).data).replacementInvoiceId;assert.ok(replacement);
-assert.equal(database.prepare('SELECT usd FROM invoices WHERE id=?').get(invoiceToCorrect.id).usd,4);
-assert.equal(database.prepare('SELECT usd FROM invoices WHERE id=?').get(replacement).usd,3.6);
+const replacement=JSON.parse((await database.prepare('SELECT data FROM invoice_corrections WHERE id=?').get(changed.data.id)).data).replacementInvoiceId;assert.ok(replacement);
+assert.equal((await database.prepare('SELECT usd FROM invoices WHERE id=?').get(invoiceToCorrect.id)).usd,4);
+assert.equal((await database.prepare('SELECT usd FROM invoices WHERE id=?').get(replacement)).usd,3.6);
 assert.equal((await call('shipments/'+id+'/paid',{invoiceId:replacement,verified:true})).status,200);
 let dsPrice=(await call('shipments/'+id)).data;
 assert.equal((await call('shipments/'+id+'/details',{...dsPrice.extra,version:dsPrice.shipment.version,vehicleBase:5000,vehicleUsdRate:.002,vehicleGnfRate:8000})).status,400);
-assert.equal((await call('shipments/'+id+'/details',{...dsPrice.extra,version:dsPrice.shipment.version,vehicleBase:5000,vehicleUsdRate:.002,vehicleGnfRate:8000,priceReason:'Prix vérifié avec la facture externe'})).status,200);
+assert.equal((await call('shipments/'+id+'/details',{...dsPrice.extra,version:dsPrice.shipment.version,vehicleBase:5000,vehicleUsdRate:.002,vehicleGnfRate:8000,priceReason:'Prix vérifié avec la facture externe',rateSource:'Source test du prix',rateDate:'2026-10-14'})).status,200);
 assert.equal((await call('tracking?ref='+ref,undefined,null)).data.shipment.vehicle_xaf,undefined);
-assert.equal(database.prepare('SELECT usd FROM invoices WHERE id=?').get(replacement).usd,3.6);
+assert.equal((await database.prepare('SELECT usd FROM invoices WHERE id=?').get(replacement)).usd,3.6);
 const arabicRecord=(await call('shipments',{...draft,client:'محمد أحمد',item:'سيارة تويوتا',firstInvoiceReference:'AR-TEST'})).data;const arabicOrder=await call('order/'+arabicRecord.ref);assert.equal(arabicOrder.status,200);writeFileSync('.sites-runtime/test-arabic-order.pdf',arabicOrder.data);
 const backup=(await call('backup')).data;assert.equal(backup.format,'TRANSWORLD_BACKUP');assert.equal(backup.tables.shipments[0].token_hash,undefined);assert.ok(Object.keys(backup.files).length);
 assert.equal((await call('backup',{backup,confirm:'RESTAURER COMPTE VIDE'})).status,409);
-for(const table of ['audit','requests','notifications','event_history','document_details','documents','invoice_corrections','invoices','shipment_details','events','admin_models','company_settings','shipments'])database.exec('DELETE FROM '+table);
+for(const table of ['audit','requests','notifications','event_history','document_details','documents','invoice_corrections','invoices','shipment_details','events','admin_models','company_settings','shipments'])await database.exec('DELETE FROM '+table);
 const restored=await call('backup',{backup,confirm:'RESTAURER COMPTE VIDE'});assert.equal(restored.status,200,JSON.stringify(restored.data));assert.equal(restored.data.count,backup.tables.shipments.length);
-const restoredRow=database.prepare('SELECT * FROM shipments WHERE ref=?').get(ref);assert.notEqual(restoredRow.id,id);assert.equal(restoredRow.token_hash,'');
+const restoredRow=(await database.prepare('SELECT * FROM shipments WHERE ref=?').get(ref));assert.notEqual(restoredRow.id,id);assert.equal(restoredRow.token_hash,'');
 assert.equal((await call('tracking?ref='+ref+'&access='+access,undefined,null)).data.privateAccess,false);
 console.log('PASS — pays/modèles, duplication avec tarifs à vérifier, VIN, corrections historisées, factures rectificatives et sauvegarde/restauration avec fichiers.');
 const savedAdminCookie=cookies.get('operator-a');
@@ -134,3 +137,5 @@ assert.equal((await call('requests')).status,200);
 console.log('PASS — mot de passe, factures PDF, conversion privée, notifications, preuve et validation des paiements, coordonnées, export.');
 console.log('PASS — création, CSRF, isolation, suivi privé, brouillons, publication, dates, concurrence, statut, estimation, lots, fichiers et révocation des liens.');
 
+
+await pg.close();

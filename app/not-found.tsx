@@ -1,0 +1,1 @@
+export default function NotFound(){return <main className="wrap information-page"><p className="eyebrow">TRANSWORLD DELIVERY</p><h1>Page introuvable</h1><p>Retrouvez les services de l’agence ou votre suivi depuis l’accueil.</p><a className="btn primary" href="/">Retour à l’accueil</a></main>;}

@@ -25,7 +25,7 @@
   ],
   "Comment ça marche": [
     "How it works",
-    "كيف يعمل"
+    "كيف تعمل الخدمة"
   ],
   "Suivre une expédition": [
     "Track a shipment",
@@ -33,15 +33,15 @@
   ],
   "Préparer mon envoi": [
     "Prepare my shipment",
-    "جهز شحنتي"
+    "تجهيز شحنتي"
   ],
   "Ouvrir le menu": [
     "Open menu",
     "افتح القائمة"
   ],
   "TRANSPORT & SUIVI INTERNATIONAL": [
-    "INTERNATIONAL SHIPPING & TRACKING",
-    "الشحن والتتبع الدولي"
+    "INTERNATIONAL TRANSPORT & TRACKING",
+    "النقل والمتابعة الدولية"
   ],
   "De là-bas,": [
     "From there,",
@@ -1922,5 +1922,285 @@
   "Partager la facture d’achat avec le client": [
     "Share the purchase invoice with the customer",
     "مشاركة فاتورة الشراء مع العميل"
+  ],
+  "À propos": [
+    "About us",
+    "من نحن"
+  ],
+  "Transport et frais": [
+    "Transport and fees",
+    "النقل والرسوم"
+  ],
+  "Notre rôle": [
+    "Our role",
+    "دورنا"
+  ],
+  "Un suivi transparent": [
+    "Transparent tracking",
+    "متابعة واضحة"
+  ],
+  "Vos informations privées": [
+    "Your private information",
+    "معلوماتك الخاصة"
+  ],
+  "Transport maritime": [
+    "Sea freight",
+    "النقل البحري"
+  ],
+  "Transport aérien": [
+    "Air freight",
+    "النقل الجوي"
+  ],
+  "Transport terrestre": [
+    "Road transport",
+    "النقل البري"
+  ],
+  "Prestations complémentaires": [
+    "Additional services",
+    "خدمات إضافية"
+  ],
+  "1. Achat et dossier": [
+    "1. Purchase and shipment record",
+    "١. الشراء وملف الشحنة"
+  ],
+  "2. Réception et préparation": [
+    "2. Receipt and preparation",
+    "٢. الاستلام والتجهيز"
+  ],
+  "3. Transport et informations": [
+    "3. Transport and updates",
+    "٣. النقل والتحديثات"
+  ],
+  "4. Factures et paiements": [
+    "4. Invoices and payments",
+    "٤. الفواتير والمدفوعات"
+  ],
+  "5. Arrivée et remise": [
+    "5. Arrival and handover",
+    "٥. الوصول والتسليم"
+  ],
+  "Ce qui détermine les frais": [
+    "What determines the fees",
+    "ما الذي يحدد الرسوم"
+  ],
+  "Des prestations détaillées": [
+    "Itemised services",
+    "خدمات مفصلة"
+  ],
+  "Montants et conversions": [
+    "Amounts and conversions",
+    "المبالغ وتحويل العملات"
+  ],
+  "Paiement et suivi": [
+    "Payment and tracking",
+    "الدفع والمتابعة"
+  ],
+  "TRANSWORLD DELIVERY centralise les informations de transport après votre achat : un dossier, une référence et un historique consultable.": [
+    "TRANSWORLD DELIVERY brings together transport information after your purchase: one record, one reference and a history you can consult.",
+    "تجمع TRANSWORLD DELIVERY معلومات النقل بعد الشراء: ملف واحد ورقم مرجعي وسجل يمكنك الاطلاع عليه."
+  ],
+  "Votre achat est réalisé auprès de votre vendeur. L’agence organise les prestations convenues et publie les informations reçues des intervenants du transport.": [
+    "You purchase from your seller. The agency organises the agreed services and publishes information received from transport providers.",
+    "تشتري من البائع الخاص بك. تنظم الوكالة الخدمات المتفق عليها وتنشر المعلومات الواردة من مقدمي خدمات النقل."
+  ],
+  "Les lieux et dates confirmés sont distincts des prévisions. La carte présente la dernière position renseignée par l’agence, avec sa date de mise à jour.": [
+    "Confirmed locations and dates are distinguished from forecasts. The map shows the last position recorded by the agency and its update date.",
+    "تتميز المواقع والتواريخ المؤكدة عن التوقعات. تعرض الخريطة آخر موقع سجلته الوكالة وتاريخ تحديثه."
+  ],
+  "La référence permet un suivi limité. Votre lien privé donne accès aux documents partagés, aux factures et aux informations personnelles de votre dossier.": [
+    "The reference provides limited tracking. Your private link grants access to shared documents, invoices and personal shipment information.",
+    "يوفر الرقم المرجعي متابعة محدودة. يتيح رابطك الخاص الوصول إلى المستندات المشتركة والفواتير والمعلومات الشخصية في ملفك."
+  ],
+  "Le mode de transport et les prestations sont confirmés selon votre marchandise, votre destination et les possibilités du transporteur.": [
+    "Transport mode and services are confirmed according to your goods, destination and carrier availability.",
+    "تؤكد وسيلة النقل والخدمات وفقا لبضاعتك ووجهتك وإمكانات الناقل."
+  ],
+  "Pour les véhicules, motos et marchandises selon les conditions acceptées. Le dossier peut comprendre enlèvement, conteneurisation, fret, transbordement et escales. Le document de transport maritime authentique peut être partagé dans le dossier.": [
+    "For vehicles, motorcycles and goods under the agreed conditions. Services may include collection, container loading, freight, transshipment and stops. Authentic sea transport documents can be shared in the record.",
+    "للمركبات والدراجات والبضائع حسب الشروط المتفق عليها. قد يشمل الملف الاستلام وتحميل الحاويات والشحن وإعادة الشحن والتوقفات. يمكن مشاركة مستند النقل البحري الأصلي في الملف."
+  ],
+  "Une solution à étudier selon la marchandise, ses dimensions, son poids et les conditions du transporteur. Les vols, délais et frais doivent être confirmés. Le document aérien authentique peut être joint au suivi.": [
+    "An option assessed according to the goods, dimensions, weight and carrier conditions. Flights, times and fees must be confirmed. Authentic air transport documents can be attached to the record.",
+    "حل يدرس حسب البضاعة وأبعادها ووزنها وشروط الناقل. يجب تأكيد الرحلات والمواعيد والرسوم. يمكن إرفاق مستند النقل الجوي الأصلي بالمتابعة."
+  ],
+  "Les segments routiers peuvent relier un entrepôt, un port, une frontière ou le lieu de remise. L’adresse, la disponibilité et le créneau sont confirmés par l’agence.": [
+    "Road segments may connect a warehouse, port, border or handover location. The agency confirms the address, availability and time slot.",
+    "قد تربط المقاطع البرية بين مستودع أو ميناء أو حدود أو مكان التسليم. تؤكد الوكالة العنوان والتوفر والموعد."
+  ],
+  "Manutention, documentation, transit, dédouanement, stockage et livraison finale sont détaillés selon les besoins réels. Les honoraires du prestataire sont distingués des droits et taxes.": [
+    "Handling, documentation, forwarding, customs clearance, storage and final delivery are itemised according to actual needs. Provider fees are separate from duties and taxes.",
+    "تفصل المناولة والمستندات والعبور والتخليص والتخزين والتسليم النهائي حسب الحاجة الفعلية. تفصل أتعاب مقدم الخدمة عن الرسوم والضرائب."
+  ],
+  "Chaque dossier suit les étapes adaptées à son parcours réel.": [
+    "Each record follows the stages appropriate to its actual journey.",
+    "يتبع كل ملف المراحل المناسبة لمساره الفعلي."
+  ],
+  "L’agence enregistre le client, les références de l’achat effectué ailleurs, la première facture, la marchandise et la destination souhaitée. La création du dossier ne confirme ni paiement ni départ.": [
+    "The agency records the client, external purchase references, first invoice, goods and requested destination. Creating a record does not confirm payment or departure.",
+    "تسجل الوكالة العميل ومراجع الشراء الخارجي والفاتورة الأولى والبضاعة والوجهة المطلوبة. لا يؤكد إنشاء الملف الدفع أو المغادرة."
+  ],
+  "Après confirmation de réception, l’agence prépare les segments de transport. Les escales et les dates prévues restent identifiées comme prévisions.": [
+    "After receipt is confirmed, the agency prepares the transport segments. Planned stops and dates remain labelled as forecasts.",
+    "بعد تأكيد الاستلام تجهز الوكالة مقاطع النقل. تظل التوقفات والمواعيد المتوقعة موسومة بأنها توقعات."
+  ],
+  "L’agence publie les départs, escales, changements et arrivées confirmés. Consultez votre référence ou votre lien privé pour retrouver la dernière information.": [
+    "The agency publishes confirmed departures, stops, changes and arrivals. Use your reference or private link to view the latest update.",
+    "تنشر الوكالة المغادرات والتوقفات والتغييرات والوصول المؤكد. استخدم رقمك المرجعي أو رابطك الخاص لعرض آخر تحديث."
+  ],
+  "Les prestations nécessaires sont expliquées séparément. Déposez une preuve sur la facture concernée ; seule l’agence confirme la réception réelle des fonds.": [
+    "Required services are explained separately. Upload proof against the relevant invoice; only the agency confirms actual receipt of funds.",
+    "تشرح الخدمات المطلوبة بشكل منفصل. ارفع إثباتا للفاتورة المعنية؛ الوكالة وحدها تؤكد استلام الأموال فعليا."
+  ],
+  "Une arrivée au port ou à l’aéroport ne signifie pas livraison. Les formalités, la mise à disposition et la remise effective sont confirmées séparément.": [
+    "Arrival at a port or airport is not delivery. Formalities, availability for collection and actual handover are confirmed separately.",
+    "الوصول إلى الميناء أو المطار لا يعني التسليم. تؤكد الإجراءات والإتاحة للاستلام والتسليم الفعلي كل على حدة."
+  ],
+  "Le prix d’achat du produit et les prestations de transport sont distincts. Aucun tarif universel ne peut être confirmé sans examiner votre dossier.": [
+    "The product purchase price and transport services are separate. No universal tariff can be confirmed without reviewing your shipment.",
+    "سعر شراء المنتج منفصل عن خدمات النقل. لا يمكن تأكيد سعر موحد دون دراسة ملف شحنتك."
+  ],
+  "Le trajet, le mode de transport, le volume, le poids, les prestations demandées et les contraintes de destination influencent le devis. La disponibilité et les frais sont confirmés avant l’engagement correspondant.": [
+    "Route, transport mode, volume, weight, requested services and destination requirements affect the quote. Availability and fees are confirmed before the corresponding commitment.",
+    "يؤثر المسار ووسيلة النقل والحجم والوزن والخدمات المطلوبة ومتطلبات الوجهة على العرض. يؤكد التوفر والرسوم قبل الالتزام بالخدمة."
+  ],
+  "Chaque facture précise la prestation réelle, son motif, son prestataire, les montants et les instructions de paiement. Les frais de stockage, surestaries ou détention ne sont applicables que lorsque la situation le justifie.": [
+    "Each invoice states the actual service, reason, provider, amounts and payment instructions. Storage, demurrage or detention fees apply only when justified by the situation.",
+    "توضح كل فاتورة الخدمة الفعلية وسببها ومقدمها والمبالغ وتعليمات الدفع. لا تطبق رسوم التخزين أو التأخير أو احتجاز الحاويات إلا عندما تبررها الحالة."
+  ],
+  "Les montants client sont présentés en USD et GNF. La source et la date des taux doivent être renseignées ; les conversions de chaque facture émise restent figées.": [
+    "Client amounts are displayed in USD and GNF. Rate sources and dates must be recorded; conversions remain fixed on each issued invoice.",
+    "تعرض مبالغ العميل بالدولار والفرنك الغيني. يجب تسجيل مصدر أسعار الصرف وتاريخها؛ وتظل التحويلات ثابتة في كل فاتورة صادرة."
+  ],
+  "Une preuve déposée reste en vérification jusqu’à la validation de réception des fonds par l’agence. Une attente financière ne modifie pas les mouvements déjà confirmés.": [
+    "Uploaded proof remains under review until the agency validates receipt of funds. A payment hold does not change movements already confirmed.",
+    "يبقى الإثبات المرفوع قيد التحقق حتى تؤكد الوكالة استلام الأموال. لا يغير انتظار الدفع التحركات المؤكدة سابقا."
+  ],
+  "Présentez votre besoin. L’agence doit confirmer la disponibilité, le trajet, la destination et les frais avant tout engagement.": [
+    "Describe your needs. The agency must confirm availability, route, destination and fees before any commitment.",
+    "صف احتياجك. يجب على الوكالة تأكيد التوفر والمسار والوجهة والرسوم قبل أي التزام."
+  ],
+  "Vous pouvez joindre l’assistant avec le bouton WhatsApp. Le message est préparé pour vous ; vous pouvez le modifier avant de l’envoyer.": [
+    "Contact the assistant using the WhatsApp button. Your message is prepared for you and can be edited before you send it.",
+    "يمكنك التواصل مع المساعد عبر زر واتساب. تجهز الرسالة لك ويمكنك تعديلها قبل إرسالها."
+  ],
+  "Votre mot de passe et votre session sont vérifiés côté serveur.": [
+    "Your password and session are verified on the server.",
+    "يتم التحقق من كلمة المرور والجلسة على الخادم."
+  ],
+  "Transport, documents et suivi de votre expédition.": [
+    "Transport, documents and shipment tracking.",
+    "النقل والمستندات ومتابعة شحنتك."
+  ],
+  "Informations publiées par votre agence.": [
+    "Updates published by your agency.",
+    "تحديثات تنشرها وكالتك."
+  ],
+  "Le suivi est momentanément indisponible. Contactez l’agence si vous avez besoin d’assistance.": [
+    "Tracking is temporarily unavailable. Contact the agency if you need assistance.",
+    "المتابعة غير متاحة مؤقتا. تواصل مع الوكالة إذا احتجت إلى المساعدة."
+  ],
+  "Prestations et actions attendues": [
+    "Services and pending actions",
+    "الخدمات والإجراءات المطلوبة"
+  ],
+  "Ces confirmations ne remplacent pas les étapes physiques du transport.": [
+    "These confirmations do not replace physical transport events.",
+    "هذه التأكيدات لا تحل محل مراحل النقل الفعلية."
+  ],
+  "En attente de paiement validé": [
+    "Awaiting verified payment",
+    "في انتظار تأكيد الدفع"
+  ],
+  "Paiement autorisé ou non requis — prise en charge à confirmer": [
+    "Financial clearance or payment not required — service acceptance pending",
+    "تم استيفاء شرط الدفع أو لا يُشترط الدفع — في انتظار تأكيد التكفل"
+  ],
+  "Prise en charge confirmée": [
+    "Service acceptance confirmed",
+    "تم تأكيد التكفل بالخدمة"
+  ],
+  "Facture rectifiée — consulter le document associé": [
+    "Invoice corrected — see the related document",
+    "تم تصحيح الفاتورة — راجع المستند المرتبط"
+  ],
+  "Précisez la source de la prise en charge réellement confirmée.": [
+    "Enter the source confirming actual service acceptance.",
+    "أدخل مصدر تأكيد التكفل الفعلي بالخدمة."
+  ],
+  "Confirmer la prise en charge réelle": [
+    "Confirm actual service acceptance",
+    "تأكيد التكفل الفعلي بالخدمة"
+  ],
+  "Prestation à prendre en charge après accord": [
+    "Service to arrange after approval",
+    "الخدمة المطلوب التكفل بها بعد الموافقة"
+  ],
+  "Paiement validé requis avant la prise en charge de cette prestation": [
+    "Verified payment required before arranging this service",
+    "يشترط تأكيد الدفع قبل التكفل بهذه الخدمة"
+  ],
+  "La validation du paiement autorise la prestation, sans créer de mouvement. Le suivi confirmé reste visible.": [
+    "Payment approval clears the service without generating movement. Confirmed tracking remains visible.",
+    "تأكيد الدفع يجيز الخدمة دون إنشاء أي حركة. يبقى التتبع المؤكد متاحاً."
+  ],
+  "Vérifier ma connexion Supabase": [
+    "Check my Supabase connection",
+    "التحقق من اتصال Supabase"
+  ],
+  "Ce contrôle interroge réellement la base et vérifie que le stockage est privé. Il ne remplace pas un essai d’import de document.": [
+    "This checks the database connection and private storage. It does not replace a document upload test.",
+    "يفحص هذا الاختبار اتصال قاعدة البيانات وخصوصية التخزين. ولا يغني عن تجربة رفع مستند."
+  ],
+  "Tester la base et le stockage": [
+    "Test database and storage",
+    "اختبار قاعدة البيانات والتخزين"
+  ],
+  "Base connectée et stockage privé vérifié.": [
+    "Database connected and private storage verified.",
+    "تم الاتصال بقاعدة البيانات والتحقق من خصوصية التخزين."
+  ],
+  "Le stockage privé reste à vérifier.": [
+    "Private storage still needs verification.",
+    "ما زال التخزين الخاص بحاجة إلى التحقق."
+  ],
+  "Email configuré — réception à tester.": [
+    "Email configured — receipt still needs testing.",
+    "البريد مهيأ — يجب اختبار الاستلام."
+  ],
+  "Email non configuré ; notifications internes disponibles.": [
+    "Email not configured; in-app notifications are available.",
+    "البريد غير مهيأ؛ إشعارات الموقع متاحة."
+  ],
+  "Révoquer le lien privé actuel du client ?": [
+    "Revoke the customer’s current private link?",
+    "هل تريد إلغاء رابط العميل الخاص الحالي؟"
+  ],
+  "Révoquer le lien privé": [
+    "Revoke private link",
+    "إلغاء الرابط الخاص"
+  ],
+  "Retirer le partage": [
+    "Remove sharing",
+    "إلغاء المشاركة"
+  ],
+  "Partager avec le client": [
+    "Share with customer",
+    "المشاركة مع العميل"
+  ],
+  "Factures actives émises": [
+    "Active invoices issued",
+    "الفواتير السارية الصادرة"
+  ],
+  "Paiements validés": [
+    "Verified payments",
+    "المدفوعات المؤكدة"
+  ],
+  "Solde des factures actives": [
+    "Active invoice balance",
+    "الرصيد المستحق للفواتير السارية"
+  ],
+  "Les documents rectifiés sont exclus de ces totaux. Le prix d’achat et les prestations encore indéterminées ne sont pas ajoutés à ce récapitulatif.": [
+    "Corrected documents are excluded. Purchase price and undetermined services are not added to this summary.",
+    "تُستبعد المستندات المصححة من هذه المجاميع. ولا يُضاف سعر الشراء أو الخدمات غير المحددة إلى هذا الملخص."
   ]
 }

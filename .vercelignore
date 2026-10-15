@@ -1,0 +1,12 @@
+node_modules
+.next
+.sites-runtime
+.local-data
+.git
+.env.local
+.env.production
+qa
+output
+tests
+*.zip
+*.tar.gz

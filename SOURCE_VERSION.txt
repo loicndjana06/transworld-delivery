@@ -1,1 +1,2 @@
-8b724317d3a8eff83194bd25d6b4f2a5f71f0644
+TRANSWORLD DELIVERY — Vercel direct, release 2026-10-15-r2.
+Sources corrigees localement depuis le ZIP fourni. Tests PostgreSQL/DOM et compilation : voir CHECKLIST_VALIDATION.md. Aucun push ni deploiement effectue ici.
