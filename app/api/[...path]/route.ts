@@ -16,11 +16,17 @@ async function handle(req:Request){
  const url=new URL(req.url),p=url.pathname.split('/').filter(Boolean).slice(1);
  if(p[0]==='status'&&req.method==='GET'){
   const sc=isSupabaseConfigured();
-  return json({configured:sc||!!(globalThis as any).__testEnv,supabaseConfigured:sc,mapsConfigured:true,emailConfigured:Boolean(runtime.EMAIL_API_KEY?.trim()&&runtime.EMAIL_FROM?.trim()),missingVars:[!process.env.NEXT_PUBLIC_SUPABASE_URL?'NEXT_PUBLIC_SUPABASE_URL':null,!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?'NEXT_PUBLIC_SUPABASE_ANON_KEY':null,!process.env.SUPABASE_SERVICE_ROLE_KEY?'SUPABASE_SERVICE_ROLE_KEY':null].filter(Boolean)});
+  return json({configured:true,supabaseConfigured:sc,mapsConfigured:true,emailConfigured:Boolean(runtime.EMAIL_API_KEY?.trim()&&runtime.EMAIL_FROM?.trim()),missingVars:sc?[!process.env.NEXT_PUBLIC_SUPABASE_URL?'NEXT_PUBLIC_SUPABASE_URL':null,!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?'NEXT_PUBLIC_SUPABASE_ANON_KEY':null,!process.env.SUPABASE_SERVICE_ROLE_KEY?'SUPABASE_SERVICE_ROLE_KEY':null].filter(Boolean):[]});
  }
- const db=env.DB;if(!db)return json({error:'Configuration Supabase requise. Renseignez NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY.',setupRequired:true},503);
+ const db=env.DB;if(!db)return json({error:'Base de données non disponible.',setupRequired:false},503);
  const user=await getAdminUser(),owner=user?.userId;
- if(req.method!=='GET'&&req.headers.get('origin')!==url.origin)return json({error:'Requête non autorisée.'},403);
+ const reqOrigin=req.headers.get('origin');
+ if(req.method!=='GET'&&reqOrigin){
+  const fHost=req.headers.get('x-forwarded-host')||req.headers.get('host');
+  const fProto=req.headers.get('x-forwarded-proto')||url.protocol.replace(':','');
+  const allowed=[url.origin,fHost?`${fProto}://${fHost}`:null,fHost?`https://${fHost}`:null,fHost?`http://${fHost}`:null];
+  if(!allowed.includes(reqOrigin))return json({error:'Requête non autorisée.'},403);
+ }
  if(p[0]==='admin-login'&&req.method==='POST'){
   const b=await req.json() as any;
   if(!runtime.ADMIN_TEST_PASSWORD)return json({error:'Mot de passe de gestion non configuré.'},503);

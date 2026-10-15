@@ -54,17 +54,27 @@ export async function createAdminSession(owner: string, secret: string, adminTes
 
 export async function validateAdminSession(cookieSecret: string, owner: string, adminTestPassword: string) {
   const supabase = getSupabaseAdminClient();
-  if (!supabase) return false;
-  const hashed = await hashString(cookieSecret + adminTestPassword);
-  const { data, error } = await supabase
-    .from('admin_sessions')
-    .select('id')
-    .eq('id', hashed)
-    .eq('owner', owner)
-    .gt('expires', now())
-    .maybeSingle();
-  if (error || !data) return false;
-  return true;
+  if (supabase) {
+    const hashed = await hashString(cookieSecret + adminTestPassword);
+    const { data, error } = await supabase
+      .from('admin_sessions')
+      .select('id')
+      .eq('id', hashed)
+      .eq('owner', owner)
+      .gt('expires', now())
+      .maybeSingle();
+    if (!error && data) return true;
+  }
+  try {
+    const { runtimeEnv } = await import('./runtime');
+    const db = runtimeEnv.DB;
+    if (db) {
+      const hashed = await hashString(cookieSecret + adminTestPassword);
+      const row = await db.prepare('SELECT id FROM admin_sessions WHERE id=? AND owner=? AND expires>?').bind(hashed, owner, now()).first();
+      return Boolean(row);
+    }
+  } catch {}
+  return false;
 }
 
 export async function deleteAdminSession(cookieSecret: string, owner: string, adminTestPassword: string) {

@@ -189,13 +189,12 @@ const SupabaseBucket = {
 export const runtimeEnv = {
   get DB() {
     if ((globalThis as any).__testEnv?.DB) return (globalThis as any).__testEnv.DB;
-    if (isSupabaseConfigured()) return DB;
-    return null;
+    return DB;
   },
   get BUCKET() {
     if ((globalThis as any).__testEnv?.BUCKET) return (globalThis as any).__testEnv.BUCKET;
     if (isSupabaseConfigured()) return SupabaseBucket;
-    return null;
+    return BUCKET;
   },
   get ADMIN_TEST_PASSWORD() {
     return (globalThis as any).__testEnv?.ADMIN_TEST_PASSWORD || process.env.ADMIN_TEST_PASSWORD || 'admin';
