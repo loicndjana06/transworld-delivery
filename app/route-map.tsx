@@ -108,6 +108,7 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
           for (const point of points) {
             const isVehicle = point === last;
             let icon: any;
+            const vehiclePath=point.mode==='Maritime'?'<path d="M4 16 2 11l10-4 10 4-2 5M6 9V4h12v5M12 7v9M2 20q3-3 5 0 3-3 5 0 3-3 5 0 3-3 5 0"/>':point.mode==='Aérien'?'<path d="m22 2-7 20-4-9-9-4Z M22 2 11 13"/>':point.mode==='Terrestre'?'<path d="M2 5h13v12H2zM15 9h4l3 4v4h-7M4 17a2 2 0 1 0 4 0m9 0a2 2 0 1 0 4 0"/>':'${vehiclePath}';
 
             if (isVehicle) {
               icon = L.divIcon({

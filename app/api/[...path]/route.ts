@@ -1,9 +1,10 @@
 import {uploadRoute} from '@/lib/uploads';
 import {serviceTasks,confirmService} from '@/lib/services';
 import {backupRoute} from '../../backup';
-import {businessRoutes,getDetails,detailData,companyData,documentKinds,unpack} from '../../business';
+import {businessRoutes,getDetails,detailData,partnerData,companyData,documentKinds,unpack} from '../../business';
 import {sendPending} from '../../notifier';
 import {invoicePdf,orderPdf} from '../../invoice-pdf';
+import {proformaPdf} from '../../proforma-pdf';
 import { runtimeEnv as env } from '@/lib/runtime';
 import { getAdminUser } from '@/lib/auth';
 import {allowAttempt} from '@/lib/security';
@@ -74,7 +75,14 @@ async function handle(req:Request){
  if(p[0]==='order'&&req.method==='GET'){
   const s:any=await db.prepare('SELECT * FROM shipments WHERE ref=?').bind(clean(p[1],60).toUpperCase()).first();const a=url.searchParams.get('access')||'';
   if(!s||!(s.owner===owner||(a&&s.token_hash===await hash(a)&&s.token_expiry>now())))return json({error:'Accès refusé.'},403);
-  return new Response(await orderPdf({...s,extra:await getDetails(db,s.id),issuer:await companyData(db,s.owner)}) as any,{headers:{'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="BC-${s.ref}.pdf"`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+  const extra=await getDetails(db,s.id),assets:any={};for(const field of ['sellerLogoDocument','platformLogoDocument','productPhotoDocument','signatureDocument']){if(!extra[field])continue;const d:any=await db.prepare('SELECT key,mime,size FROM documents WHERE id=? AND shipment_id=? AND shared=1').bind(extra[field],s.id).first();if(!d||!['image/jpeg','image/png'].includes(d.mime)||d.size>2*1024*1024)continue;const f=await env.BUCKET?.get(d.key);if(f){const bytes=new Uint8Array(f.arrayBuffer?await f.arrayBuffer():f.body);if(bytes.byteLength<=2*1024*1024)assets[field]={mime:d.mime,bytes};}}
+  return new Response(await orderPdf({...s,extra,assets,issuer:await companyData(db,s.owner)}) as any,{headers:{'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="BC-${s.ref}.pdf"`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+ }
+ if(p[0]==='proforma'&&req.method==='GET'){
+  const s:any=await db.prepare('SELECT * FROM shipments WHERE ref=?').bind(clean(p[1],60).toUpperCase()).first();const a=url.searchParams.get('access')||'';
+  if(!s||!(s.owner===owner||(a&&s.token_hash===await hash(a)&&s.token_expiry>now())))return json({error:'Accès refusé.'},403);
+  const bytes=await proformaPdf({...s,extra:await getDetails(db,s.id),issuer:await companyData(db,s.owner)});
+  return new Response(bytes as any,{headers:{'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="PF-${s.ref}.pdf"`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
  }
  if(p[0]==='invoice'&&req.method==='GET'){
   const i:any=await db.prepare('SELECT * FROM invoices WHERE id=?').bind(p[1]).first();if(!i)return json({error:'Facture introuvable.'},404);
@@ -102,6 +110,7 @@ async function handle(req:Request){
  if(p[0]==='document'&&req.method==='GET'){
   const d:any=await db.prepare('SELECT d.*,s.owner,s.token_hash,s.token_expiry FROM documents d JOIN shipments s ON s.id=d.shipment_id WHERE d.id=?').bind(p[1]).first();if(!d)return json({error:'Document indisponible.'},404);
   const access=url.searchParams.get('access')||'';if(d.owner!==owner&&!(d.shared&&access&&d.token_hash===await hash(access)&&d.token_expiry>now()))return json({error:'Accès refusé. Votre lien privé peut avoir expiré.'},403);
+  if(url.searchParams.get('inline')==='1'&&['image/jpeg','image/png'].includes(d.mime)){const f=await env.BUCKET?.get(d.key);if(!f)return json({error:'Image indisponible.'},404);return new Response(f.body,{headers:{'Content-Type':d.mime,'Content-Disposition':'inline','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'}});}
   if(env.BUCKET?.downloadUrl){const location=await env.BUCKET.downloadUrl(d.key,d.name);return new Response(null,{status:303,headers:{Location:location,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});}
   const file=await env.BUCKET?.get(d.key);if(!file)return json({error:'Document indisponible.'},404);
   return new Response(file.body,{headers:{'Content-Type':d.mime,'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(d.name)}`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'}});
@@ -116,6 +125,12 @@ async function handle(req:Request){
   const cookie=(req.headers.get('cookie')||'').match(/(?:^|;\s*)kc_admin=([a-f0-9]{48})(?:;|$)/)?.[1];
   const session=cookie?await db.prepare('SELECT id FROM admin_sessions WHERE id=? AND owner=? AND expires>?').bind(await hash(cookie+runtime.ADMIN_TEST_PASSWORD),owner,now()).first():null;
   if(!session)return json({error:'Ouvrez la gestion avec votre mot de passe.'},401);
+ }
+ if(p[0]==='suggestions'&&req.method==='GET'){
+  const rows=(await db.prepare('SELECT s.client,s.contact,s.item,s.origin,s.destination,s.container,s.delivery,s.email,sd.data FROM shipments s LEFT JOIN shipment_details sd ON sd.shipment_id=s.id WHERE s.owner=? ORDER BY s.updated DESC LIMIT 500').bind(owner).all()).results;
+  const fields=['client','contact','item','origin','destination','container','delivery','email','sellerName','sellerAddress','sellerContact','sellerRegistration','deliveryCountry','deliveryCity','deliveryAddress','deliverySlot','orderSigner','rateSource'];const values:any={};for(const k of fields)values[k]=[];
+  for(const row of rows){const extra=unpack(row.data);for(const k of fields){const value=clean(row[k]||extra[k],500);if(value&&!values[k].includes(value)&&values[k].length<60)values[k].push(value);}}
+  return json(values);
  }
  if(p[0]==='health'&&req.method==='GET'){
   await db.prepare('SELECT id FROM shipments WHERE owner=? LIMIT 1').bind(owner).all();
@@ -136,12 +151,12 @@ async function handle(req:Request){
  if(p[0]==='audit'&&req.method==='GET')return json((await db.prepare('SELECT a.action,a.detail,a.created,s.ref FROM audit a LEFT JOIN shipments s ON s.id=a.shipment_id WHERE a.owner=? ORDER BY a.created DESC LIMIT 100').bind(owner).all()).results);
  if(p[0]==='shipments'&&p.length===1){
   if(req.method==='GET')return json((await db.prepare('SELECT id,ref,client,contact,item,category,origin,destination,container,email,delivery,eta,status,created,updated,version,(SELECT COUNT(*) FROM invoices WHERE shipment_id=shipments.id AND status=\'preuve_recue\') AS proof_count FROM shipments WHERE owner=? ORDER BY updated DESC LIMIT 500').bind(owner).all()).results);
-  const b=await req.json() as any;if(b.email&&!/^\S+@\S+\.\S+$/.test(b.email))return json({error:'Courriel invalide.'},400);for(const f of ['client','contact','item','category','origin','destination','purchaseReference','firstInvoiceReference'])if(!clean(b[f]))return json({error:'Renseignez les champs obligatoires.'},400);
+  const b=await req.json() as any;if(b.email&&!/^\S+@\S+\.\S+$/.test(b.email))return json({error:'Courriel invalide.'},400);for(const f of ['client'])if(!clean(b[f]))return json({error:'Renseignez les champs obligatoires.'},400);
   if(b.eta&&!Number.isFinite(Date.parse(b.eta)))return json({error:'Estimation invalide.'},400);
   const vb=Number(b.vehicleBase),vr=Number(b.vehicleUsdRate),vg=Number(b.vehicleGnfRate),hasPrice=!!(b.vehicleBase||b.vehicleUsdRate||b.vehicleGnfRate);
   if(hasPrice&&![vb,vr,vg].every(v=>Number.isFinite(v)&&v>0))return json({error:'Renseignez le prix du véhicule et les deux taux positifs, ou laissez les trois champs vides.'},400);
   const orderUsd=hasPrice?Math.round(vb*vr*100)/100:null,orderGnf=hasPrice?Math.round(Number(orderUsd)*vg):null;if(hasPrice&&(!Number.isFinite(orderUsd)||!Number.isFinite(orderGnf)||Number(orderUsd)<=0||Number(orderGnf)<=0||Number(orderUsd)>1e12||Number(orderGnf)>9e15))return json({error:'Montant converti hors limites.'},400);
-  let extra:any;try{extra=detailData(b);}catch(e:any){return json({error:e.message},400);}
+  let extra:any;try{extra={...detailData(b),...await partnerData(db,'',Object.fromEntries(Object.entries(b).filter(([k])=>!['sellerLogoDocument','platformLogoDocument','productPhotoDocument','signatureDocument'].includes(k))))};}catch(e:any){return json({error:e.message},400);}
   if(hasPrice&&(!clean(b.rateSource)||!/^\d{4}-\d{2}-\d{2}$/.test(clean(b.rateDate))||!Number.isFinite(Date.parse(b.rateDate))))return json({error:'Source et date réelles des taux du prix d’achat requises.'},400);
   if(hasPrice)extra.purchaseRates={usdPerXaf:vr,gnfPerUsd:vg};
   if(extra.firstInvoiceReference){const prior=await db.prepare("SELECT sd.shipment_id FROM shipment_details sd JOIN shipments s ON s.id=sd.shipment_id WHERE s.owner=? AND json_extract(sd.data,'$.firstInvoiceReference')=? AND s.client=? AND s.item=?").bind(owner,extra.firstInvoiceReference,clean(b.client),clean(b.item)).first();if(prior)return json({error:'Un dossier existe déjà pour cette facture et ce client.'},409);}
@@ -154,7 +169,7 @@ async function handle(req:Request){
  if(req.method!=='POST')return json({error:'Méthode non autorisée.'},405);
  if(p[2]==='service-confirm')return confirmService(req,db,owner,id,runtime);
  if(p[2]==='update'){
-  const b=await req.json() as any;for(const f of ['client','contact','item','origin','destination'])if(!clean(b[f]))return json({error:'Renseignez les champs obligatoires.'},400);
+  const b=await req.json() as any;for(const f of ['client'])if(!clean(b[f]))return json({error:'Renseignez les champs obligatoires.'},400);
   if(b.email&&!/^\S+@\S+\.\S+$/.test(b.email))return json({error:'Courriel invalide.'},400);if(Number(b.version)!==s.version)return json({error:'Dossier modifié. Actualisez avant de corriger.'},409);
   const revoke=clean(b.contact)!==s.contact||clean(b.email)!==s.email;
   const res=await db.batch([db.prepare('UPDATE shipments SET client=?,contact=?,email=?,item=?,origin=?,destination=?,container=?,delivery=?,token_hash=?,token_expiry=?,version=version+1 WHERE id=? AND version=?').bind(clean(b.client),clean(b.contact),clean(b.email),clean(b.item),clean(b.origin),clean(b.destination),clean(b.container),clean(b.delivery),revoke?'':s.token_hash,revoke?'':s.token_expiry,id,s.version),db.prepare('INSERT INTO audit (id,owner,shipment_id,action,detail,created) SELECT ?,?,?,?,?,? WHERE changes()>0').bind(uuid(),owner,id,'Dossier corrigé',JSON.stringify({before:{client:s.client,item:s.item,origin:s.origin,destination:s.destination,delivery:s.delivery,orderUsd:s.order_usd,orderGnf:s.order_gnf},after:{client:clean(b.client),item:clean(b.item),origin:clean(b.origin),destination:clean(b.destination),delivery:clean(b.delivery)},linkRevoked:revoke}),now())]);if(!res[0].meta.changes)return json({error:'Modification concurrente. Actualisez.'},409);return json({ok:true,linkRevoked:revoke});

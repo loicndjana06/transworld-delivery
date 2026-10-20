@@ -17,6 +17,16 @@ const draft={email:'client@example.test',client:'Client test',contact:'client@ex
 assert.equal((await call('shipments',draft,null)).status,401);
 assert.equal((await call('shipments',draft,'operator-a','https://evil.test')).status,403);
 const created=await call('shipments',draft);assert.equal(created.status,201);const {id,ref,access}=created.data;
+// Pro forma: private, read-only, and never creates a payment request.
+assert.equal((await call('proforma/'+ref,undefined,null)).status,403);
+assert.equal((await call('proforma/'+ref,undefined,'operator-b')).status,403);
+assert.equal((await call('proforma/'+ref+'?access=invalid',undefined,null)).status,403);
+const proformaAdmin=await call('proforma/'+ref);
+assert.equal(proformaAdmin.status,200);assert.match(proformaAdmin.headers.get('content-type'),/application\/pdf/);
+assert.equal((await call('proforma/'+ref+'?access='+access,undefined,null)).status,200);
+assert.equal((await call('tracking?ref='+ref+'&access='+access,undefined,null)).data.invoices.length,0);
+assert.equal((await call('tracking?ref='+ref,undefined,null)).data.events.length,0);
+
 assert.equal((await call('shipments',undefined,'operator-b')).data.length,0);
 assert.equal((await call('shipments/'+id,undefined,'operator-b')).status,403);
 let result=await call('tracking?ref='+ref,undefined,null);assert.equal(result.status,200);assert.equal(result.data.privateAccess,false);assert.equal(result.data.shipment.client,undefined);
@@ -44,6 +54,8 @@ detail=(await call('shipments/'+id)).data;const did=detail.documents[0].id;
 assert.equal((await call('document/'+did,undefined,'operator-b')).status,403);
 assert.equal((await call('document/'+did+'?access='+access,undefined,null)).status,200);
 const renewed=(await call('shipments/'+id+'/link',{})).data;
+assert.equal((await call('proforma/'+ref+'?access='+access,undefined,null)).status,403);
+assert.equal((await call('proforma/'+ref+'?access='+renewed.access,undefined,null)).status,200);
 assert.equal((await call('document/'+did+'?access='+access,undefined,null)).status,403);
 assert.equal((await call('document/'+did+'?access='+renewed.access,undefined,null)).status,200);
 const bad=new FormData();bad.set('file',new File(['<script>bad</script>'],'fake.pdf',{type:'application/pdf'}));assert.equal((await call('shipments/'+id+'/documents',bad)).status,400);
@@ -138,4 +150,29 @@ console.log('PASS — mot de passe, factures PDF, conversion privée, notificati
 console.log('PASS — création, CSRF, isolation, suivi privé, brouillons, publication, dates, concurrence, statut, estimation, lots, fichiers et révocation des liens.');
 
 
+// Minimal creation and seller data are optional; suggestions and edits stay admin-only.
+const minimal=await call('shipments',{client:'Client minimal',purchaseReference:'',firstInvoiceReference:''});assert.equal(minimal.status,201);
+let md=(await call('shipments/'+minimal.data.id)).data;
+assert.equal(md.shipment.ref,minimal.data.ref);assert.equal(md.shipment.origin,'');
+assert.equal((await call('suggestions',undefined,null)).status,401);
+assert.equal((await call('shipments/'+minimal.data.id+'/details',{version:md.shipment.version,sellerName:'Vendeur indépendant',sellerAddress:'Adresse fournie',sellerRole:'Vendeur',transportMode:'Maritime',clientInformation:'Votre agence publiera les confirmations.'})).status,200);
+md=(await call('shipments/'+minimal.data.id)).data;assert.equal(md.extra.sellerName,'Vendeur indépendant');
+assert.equal((await call('suggestions')).data.sellerName.includes('Vendeur indépendant'),true);
+assert.equal((await call('suggestions',undefined,'operator-b')).data.sellerName.includes('Vendeur indépendant'),false);
+assert.equal((await call('tracking?ref='+minimal.data.ref,undefined,null)).data.extra.sellerName,undefined);
+assert.equal((await call('tracking?ref='+minimal.data.ref+'&access='+minimal.data.access,undefined,null)).data.extra.sellerName,'Vendeur indépendant');
+assert.equal((await call('shipments/'+minimal.data.id+'/details',{version:md.shipment.version,sellerName:'Attaque'},null)).status,401);
+assert.equal((await call('shipments/'+minimal.data.id+'/details',{version:md.shipment.version,productPhotoDocument:did})).status,400);
+assert.equal((await call('shipments/'+minimal.data.id+'/details',{version:md.shipment.version,deliveryCity:'Conakry'})).status,200);
+md=(await call('shipments/'+minimal.data.id)).data;assert.equal(md.extra.sellerName,'Vendeur indépendant');assert.equal(md.shipment.ref,minimal.data.ref);
+assert.equal((await call('order/'+minimal.data.ref,undefined,null)).status,403);
+assert.equal((await call('order/'+minimal.data.ref+'?access='+minimal.data.access,undefined,null)).status,200);
+assert.equal((await call('shipments/'+minimal.data.id+'/events',{...event,version:md.shipment.version},null)).status,401);
+const imageForm=new FormData();imageForm.set('file',new File([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAIAAADbtmxLAAAAP0lEQVR4nO3OMRHAIAAAMUBCNSIB/9e9y490SBRkPvuMP1m3A19CRagIFaEiVISKUBEqQkWoCBWhIlSEilB5AeY4ASo6dxEZAAAAAElFTkSuQmCC','base64')],'photo-test.png',{type:'image/png'}));imageForm.set('shared','true');assert.equal((await call('shipments/'+minimal.data.id+'/documents',imageForm)).status,200);
+md=(await call('shipments/'+minimal.data.id)).data;const photoId=md.documents[0].id;
+assert.equal((await call('shipments/'+minimal.data.id+'/details',{version:md.shipment.version,productPhotoDocument:photoId,sellerLogoDocument:photoId,signatureDocument:photoId,orderSigner:'Signataire de test',orderSignedAt:new Date().toISOString().slice(0,10)})).status,200);
+assert.equal((await call('document/'+photoId+'?inline=1&access='+minimal.data.access,undefined,null)).status,200);
+assert.equal((await call('document/'+photoId+'?inline=1&access='+renewed.access,undefined,null)).status,403);
+assert.equal((await call('order/'+minimal.data.ref+'?access='+minimal.data.access,undefined,null)).status,200);
+console.log('PASS — dossier minimal sans facture, vendeur facultatif, conservation des données, suggestions réservées à l’admin, isolation des images et lecture client seule.');
 await pg.close();

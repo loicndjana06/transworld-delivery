@@ -65,7 +65,8 @@ assert.ok(document.querySelector('dialog input[name=origin]'));
 creation=document.querySelector('dialog form');
 creation.querySelector('input[name=origin]').value='Origin';creation.querySelector('input[name=destination]').value='Destination';
 await act(async()=>creation.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
-assert.ok(document.querySelector('dialog input[name=purchaseInvoice][required]'));
+assert.ok(document.querySelector('dialog input[name=purchaseInvoice]:not([required])'));
+assert.equal(document.querySelector('dialog input[name=purchaseInvoice]').required,false);
 await act(async()=>document.querySelector('.modal-head button').click());
 await act(async()=>root.unmount());
 for(const [view,title]of [['about','À propos'],['services','Nos services'],['process','Comment ça marche'],['pricing','Transport et frais'],['contact','Préparer mon envoi']]){
