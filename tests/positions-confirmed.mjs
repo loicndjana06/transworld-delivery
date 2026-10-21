@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {JSDOM} from 'jsdom';
+import React,{act} from 'react';
+import {createRoot} from 'react-dom/client';
+import esbuild from 'esbuild';
+const dom=new JSDOM('<div id="root"></div>',{url:'https://cargo.test/'});
+for(const k of ['window','document','HTMLElement','Event'])globalThis[k]=dom.window[k];
+globalThis.IS_REACT_ACT_ENVIRONMENT=true;globalThis.fetch=async()=>Response.json([]);
+await esbuild.build({entryPoints:['app/location-fields.tsx'],outfile:'.sites-runtime/positions-confirmed.mjs',bundle:true,platform:'node',format:'esm',jsx:'automatic',packages:'external'});
+const {default:LocationFields}=await import('../.sites-runtime/positions-confirmed.mjs');const root=createRoot(document.getElementById('root'));let estimated;
+await act(async()=>root.render(React.createElement(LocationFields,{onEstimate:v=>estimated=v})));
+const select=document.querySelector('select');const kind=document.querySelector('[name="positionKind"]');assert.equal(kind.value,'confirmed');
+await act(async()=>{select.value='4';select.dispatchEvent(new Event('change',{bubbles:true}));});
+assert.equal(document.querySelector('[name="place"]').value,'Océan Indien');assert.equal(document.querySelector('[name="lat"]').value,'-10');assert.equal(document.querySelector('[name="lng"]').value,'77');assert.equal(kind.value,'confirmed');assert.equal(estimated,false);
+await act(async()=>{kind.value='estimated';kind.dispatchEvent(new Event('change',{bubbles:true}));});assert.equal(estimated,true);
+await act(async()=>{select.value='5';select.dispatchEvent(new Event('change',{bubbles:true}));});assert.equal(kind.value,'confirmed');assert.equal(estimated,false);
+assert.equal(document.querySelectorAll('.form-error').length,0);
+await act(async()=>root.unmount());console.log('PASS — repère maritime préchargé confirmé par défaut ; aucune estimation imposée et choix manuel conservé.');

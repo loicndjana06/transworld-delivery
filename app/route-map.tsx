@@ -1,7 +1,8 @@
 'use client';
+import {bearing,routeGeometry,type RouteConfig} from './maritime';
 import { tr } from './i18n';
 import { useEffect, useRef, useState } from 'react';
-import { Car, MapPin, Maximize, ExternalLink } from 'lucide-react';
+import { Ship, Plane, Truck, MapPin, Maximize, RefreshCw } from 'lucide-react';
 
 const escapeHtml=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 
@@ -15,21 +16,28 @@ interface MapPoint {
   mode?: string;
   note?: string;
   planned?: number;
+  estimated?: boolean;
 }
 
-export default function RouteMap({ events, reference = '' }: { events: any[]; reference?: string }) {
+export default function RouteMap({ events, reference = '',mode='',origin='',destination='',route }: { events: any[]; reference?: string;mode?:string;origin?:string;destination?:string;route?:RouteConfig }) {
   const box = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
+  const mapRef=useRef<any>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
+  const [retry,setRetry]=useState(0),[tilesLoaded,setTilesLoaded]=useState(false);
 
   const points: MapPoint[] = events
     .filter(e => typeof e.lat === 'number' && typeof e.lng === 'number' && !isNaN(e.lat) && !isNaN(e.lng))
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
-  const actual = points.filter(e => !e.planned);
+  const actual = points.filter(e => !e.planned&&!e.estimated);
+  const estimate=points.filter(e=>!e.planned&&e.estimated).at(-1);
+  const displayPosition=estimate&&(!actual.at(-1)||estimate.date>actual.at(-1)!.date)?estimate:actual.at(-1);
+  const geometry=routeGeometry(route);
   const last = actual[actual.length - 1];
-  const coords = JSON.stringify(points.map(e => [e.id,e.lat,e.lng,e.planned,e.place,e.date,e.type,e.mode,e.note]));
+  const selected=displayPosition?.mode||mode||route?.mode||'Maritime',Icon=selected==='Aérien'?Plane:selected==='Terrestre'?Truck:Ship;
+  const coords = JSON.stringify(points.map(e => [e.id,e.lat,e.lng,e.planned,e.place,e.date,e.type,e.mode,e.note,e.estimated]));
 
   useEffect(() => {
     let dead = false;
@@ -38,11 +46,13 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
 
     setReady(false);
     setError('');
+    setTilesLoaded(false);
 
-    if (!points.length || !host.current) return;
+    if (!host.current) return;
 
     fetch('/api/config?ref=' + encodeURIComponent(reference))
-      .then(r => r.json())
+      .then(r => r.ok?r.json():{})
+      .catch(()=>({}))
       .then(async (c: any) => {
         if (dead || !host.current) return;
 
@@ -60,23 +70,24 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
           const attribution = c.attribution || '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
 
           const map = L.map(host.current, {
-            center: [last?.lat ?? points[0].lat, last?.lng ?? points[0].lng],
-            zoom: 5,
+            center: [last?.lat ?? points[0]?.lat ?? 12, last?.lng ?? points[0]?.lng ?? 25],
+            zoom: points.length?5:2,
             zoomControl: true,
             attributionControl: true,
             scrollWheelZoom: 'center',
           });
-          mapInstance = map;
+          mapInstance = map;mapRef.current=map;
+          if(geometry.length>1)L.polyline(geometry,{color:"#b29354",weight:3,dashArray:"6,8",opacity:.85}).addTo(map);
 
           // Tile Layer following OpenStreetMap usage policy (on-demand only, visible attribution, no prefetch)
-          L.tileLayer(tileUrl, {
+          const tiles=L.tileLayer(tileUrl, {
             attribution,
             maxZoom: 19,
             subdomains: ['a', 'b', 'c'],
-          }).addTo(map);
+          }).on('tileload',()=>{if(!dead){setTilesLoaded(true);setError('');}}).on('tileerror',()=>{if(!dead)setError('Le fond de carte n’a pas pu être chargé. Vérifiez votre connexion puis réessayez.');}).addTo(map);
 
           // Confirmed route polyline
-          if (actual.length > 1) {
+          if (!route&&actual.length > 1) {
             const confirmedLatLngs = actual.map(p => [p.lat, p.lng] as [number, number]);
             L.polyline(confirmedLatLngs, {
               color: '#126474',
@@ -88,7 +99,7 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
 
           // Planned forecast route polyline (connecting last confirmed to planned stops)
           const plannedStops = points.filter(e => e.planned);
-          if (plannedStops.length > 0) {
+          if (!route&&plannedStops.length > 0) {
             const plannedPoints = last ? [last, ...plannedStops] : plannedStops;
             if (plannedPoints.length > 1) {
               const plannedLatLngs = plannedPoints.map(p => [p.lat, p.lng] as [number, number]);
@@ -103,22 +114,25 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
           }
 
           // Markers for each stop
-          const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]));
+          const bounds = L.latLngBounds([...points.map(p => [p.lat, p.lng] as [number,number]),...geometry]);
 
           for (const point of points) {
-            const isVehicle = point === last;
+            const isVehicle = point === displayPosition;
+            const next=route?.points.find((p,i)=>i>0&&route.points[i-1].lat===point.lat&&route.points[i-1].lng===point.lng);
+            const angle=next?bearing(point,next):0;
             let icon: any;
-            const vehiclePath=point.mode==='Maritime'?'<path d="M4 16 2 11l10-4 10 4-2 5M6 9V4h12v5M12 7v9M2 20q3-3 5 0 3-3 5 0 3-3 5 0 3-3 5 0"/>':point.mode==='Aérien'?'<path d="m22 2-7 20-4-9-9-4Z M22 2 11 13"/>':point.mode==='Terrestre'?'<path d="M2 5h13v12H2zM15 9h4l3 4v4h-7M4 17a2 2 0 1 0 4 0m9 0a2 2 0 1 0 4 0"/>':'${vehiclePath}';
+            const visualMode=point.mode||mode||route?.mode||'Maritime';
+            const vehiclePath=visualMode==='Maritime'?'<path d="M4 16 2 11l10-4 10 4-2 5M6 9V4h12v5M12 7v9M2 20q3-3 5 0 3-3 5 0 3-3 5 0 3-3 5 0"/>':visualMode==='Aérien'?'<path d="m22 2-7 20-4-9-9-4Z M22 2 11 13"/>':'<path d="M2 5h13v12H2zM15 9h4l3 4v4h-7"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>';
 
             if (isVehicle) {
               icon = L.divIcon({
                 className: 'leaflet-vehicle-div',
-                html: `<div class="map-car" title="${escapeHtml(point.place)} — Dernière position confirmée"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 11 2-5h10l2 5M4 11h16v7H4zM6 18v2m12-2v2M7 14h2m6 0h2"/></svg></div>`,
+                html: `<div class="map-car map-transport" title="${escapeHtml(point.place)} — ${point.estimated?"Zone estimée":"Position confirmée par votre transporteur"}"><svg style="transform:rotate(${angle}deg)" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8">${vehiclePath}</svg>${next?'<span class="map-heading-arrow" style="transform:rotate('+angle+'deg)" aria-label="Sens indicatif vers le prochain repère">↑</span>':''}</div>`,
                 iconSize: [46, 46],
                 iconAnchor: [23, 23],
                 popupAnchor: [0, -23],
               });
-            } else if (point.planned) {
+            } else if (point.planned||point.estimated) {
               icon = L.divIcon({
                 className: 'leaflet-stop-div',
                 html: `<div class="map-point planned" style="background:#b29354;border:2px solid #fff;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.18);">○</div>`,
@@ -145,7 +159,7 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
               <div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.4;padding:4px;min-width:180px;">
                 <strong style="display:block;font-size:13px;color:#163941;margin-bottom:4px;">${escapeHtml(point.place)}</strong>
                 <span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:600;margin-bottom:6px;${point.planned ? 'background:#f9ecd8;color:#885331;' : 'background:#e9f2f2;color:#126474;'}">
-                  ${isVehicle ? 'Dernière position confirmée' : point.planned ? 'Étape prévue' : 'Étape confirmée'}
+                  ${point.estimated?'Zone estimée · pas de GPS':isVehicle ? 'Position confirmée par votre transporteur' : point.planned ? 'Étape prévue' : 'Étape confirmée'}
                 </span>
                 ${point.mode ? `<div style="color:#617274;font-size:11px;">Mode : <b>${escapeHtml(point.mode)}</b></div>` : ''}
                 <div style="color:#617274;font-size:11px;margin-top:2px;">Date : ${new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(point.date))}</div>
@@ -153,6 +167,8 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
               </div>
             `;
             marker.bindPopup(popupContent);
+            marker.bindTooltip(escapeHtml(point.place));
+            if(isVehicle)marker.openPopup();
           }
 
           if (bounds.isValid()) {
@@ -165,6 +181,7 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
           resizeObserver.observe(host.current);
 
           setReady(true);
+          requestAnimationFrame(()=>{if(!dead){map.invalidateSize({pan:false});if(bounds.isValid())map.fitBounds(bounds,{padding:[45,45],maxZoom:13});tiles.redraw();}});
         } catch (err: any) {
           if (!dead) {
             console.error('Erreur Leaflet:', err);
@@ -185,7 +202,7 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords, reference]);
+  }, [coords, reference,mode,retry,JSON.stringify(route)]);
 
   const minLng = Math.min(...points.map(e => e.lng));
   const maxLng = Math.max(...points.map(e => e.lng));
@@ -200,8 +217,8 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
     <section className="panel route-map" ref={box}>
       <div className="panel-heading">
         <div>
-          <h2>{tr('Votre parcours sur la carte')}</h2>
-          <p className="tiny muted">{tr('Dernière position confirmée • liaison entre étapes indicative')}</p>
+          <p className="eyebrow">VISIBILITÉ DU PARCOURS</p><h2>{tr('Votre parcours sur la carte')}</h2>
+          <p className="tiny muted">{displayPosition?.estimated?'Zone estimée publiée par l’agence · aucun GPS en direct':tr('Position confirmée par votre transporteur · date de mise à jour affichée')}</p>
         </div>
         <button
           className="icon-btn"
@@ -218,13 +235,15 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
         </button>
       </div>
 
+      <div className="map-tools"><button type="button" className="btn secondary" onClick={()=>{const bounds=[...points.map(p=>[p.lat,p.lng]),...geometry];if(bounds.length)mapRef.current?.fitBounds(bounds,{padding:[35,35],maxZoom:13});}}>Voir tout le trajet</button><button type="button" className="btn secondary" disabled={!displayPosition} onClick={()=>{if(displayPosition)mapRef.current?.setView([displayPosition.lat,displayPosition.lng],7);}}>Dernière position publiée</button></div><div className="map-route-strip"><div><small>DÉPART</small><strong>{origin||'Départ à confirmer'}</strong></div><Icon size={28}/><div><small>DESTINATION</small><strong>{destination||'Arrivée à confirmer'}</strong></div></div>
       <div
         ref={host}
         className={'google-map ' + (ready ? 'ready' : '')}
-        style={{ height: '380px', width: '100%', borderRadius: '7px' }}
+        style={{ display:'block',height: '440px', width: '100%', borderRadius: '7px',background:'#dce9ed' }}
         aria-label={tr('Carte interactive OpenStreetMap des étapes')}
       />
 
+      {ready&&!points.length&&<div className="map-context"><Icon size={24}/><div><strong>Dossier enregistré · parcours en préparation</strong><p>Vue générale. Votre agence publiera les coordonnées des points du trajet.</p></div></div>}
       {!ready && (
         points.length ? (
           <div className="map-schematic">
@@ -274,40 +293,33 @@ export default function RouteMap({ events, reference = '' }: { events: any[]; re
         ) : (
           <div className="empty">
             <MapPin />
-            <h3>{tr('La position reste à renseigner.')}</h3>
-            <p>{tr('Le repère apparaîtra lorsque l’agence publiera une étape avec ses coordonnées.')}</p>
+            <h3>{tr('Préparation de votre carte')}</h3>
+            <p>{tr('Les étapes et lieux publiés par votre agence seront présentés sur cette carte.')}</p>
           </div>
         )
       )}
 
       <div className="map-caption">
         <div>
-          <Car size={17} />
+          <Icon size={17} />
           <span>
-            {last
-              ? last.place +
+            {displayPosition
+              ? (displayPosition.estimated?'Zone estimée · ':'Position confirmée · ')+displayPosition.place +
                 ' • ' +
                 new Intl.DateTimeFormat('fr-FR', {
                   day: 'numeric',
                   month: 'short',
                   hour: '2-digit',
                   minute: '2-digit',
-                }).format(new Date(last.date))
-              : 'Aucune position confirmée'}
+                }).format(new Date(displayPosition.date))
+              : 'Localisation précise en attente de confirmation par l’agence'}
           </span>
         </div>
-        {last && (
-          <a
-            href={`https://www.openstreetmap.org/?mlat=${last.lat}&mlon=${last.lng}#map=12/${last.lat}/${last.lng}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {tr('Ouvrir sur OpenStreetMap')}
-            <ExternalLink size={13} />
-          </a>
-        )}
+        <button type="button" className="btn secondary" onClick={()=>setRetry(v=>v+1)}><RefreshCw size={13}/> Recharger la carte</button>
       </div>
 
+      <div className="map-legend"><span><i className="legend-confirmed"/> Étape confirmée</span><span><i className="legend-planned"/> Étape prévue</span></div><p className="tiny muted">{displayPosition?.estimated?"Zone estimée publiée séparément des positions confirmées.":actual.length?"Les étapes datées sont confirmées et publiées par votre transporteur. Le tracé du parcours prévu reste distinct des positions publiées.":"Les positions publiées par votre transporteur apparaîtront sur cette carte."}</p>
+      {ready&&!tilesLoaded&&!error&&<p className="tiny muted">Chargement du fond cartographique…</p>}
       {error && (
         <p className="tiny muted map-warning">
           {tr(error)} {tr('Ce schéma ne représente pas une position GPS en direct.')}

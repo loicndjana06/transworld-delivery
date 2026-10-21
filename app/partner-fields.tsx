@@ -2,7 +2,7 @@
 import {SuggestedInput} from './suggestions';
 import {useState} from 'react';
 import {uploadPrivateFile} from '@/lib/client-upload';
-export const partnerKeys=['sellerName','sellerAddress','sellerContact','sellerRegistration','sellerRole','clientInformation','orderSigner','orderSignedAt','transportMode','sellerLogoDocument','platformLogoDocument','productPhotoDocument','signatureDocument'];
+export const partnerKeys=['sellerName','sellerAddress','sellerContact','sellerRegistration','sellerRole','clientInformation','orderSigner','orderSignedAt','transportMode','sellerLogoDocument','platformLogoDocument','productPhotoDocument','signatureDocument','transportCompany','vesselName','voyageNumber','nextUpdate'];
 export const assetFields=[['sellerLogoDocument','Logo du vendeur'],['platformLogoDocument','Logo du service de suivi'],['productPhotoDocument','Photo de la marchandise'],['signatureDocument','Signature authentique autorisée']] as const;
 export function PartnerFields({data={},documents=[]}:{data?:any,documents?:any[]}){
  const [mode,setMode]=useState(data.transportMode||'');
@@ -11,6 +11,7 @@ export function PartnerFields({data={},documents=[]}:{data?:any,documents?:any[]
  <label>Rôle de l’entreprise partenaire<select name="sellerRole" defaultValue={data.sellerRole||'Vendeur'}>{['Vendeur','Vendeur et expéditeur','Expéditeur mandaté'].map(v=><option key={v}>{v}</option>)}</select></label>
  <label>Transport principal<select name="transportMode" value={mode} onChange={e=>setMode(e.target.value)}><option value="">À confirmer</option>{['Maritime','Aérien','Terrestre','Combiné'].map(v=><option key={v}>{v}</option>)}</select></label>
  <p className="tiny muted">{mode==='Maritime'?'Parcours : préparation, port de départ, embarquement, traversée, arrivée, formalités et remise.':mode==='Aérien'?'Parcours : préparation, aéroport de départ, vol, arrivée, formalités et remise.':mode==='Terrestre'?'Parcours : enlèvement, départ, points de passage, arrivée et remise.':'Les segments et étapes réels restent gérés par l’administrateur.'} Le choix du mode ne confirme aucun déplacement.</p>
+ {([['transportCompany','Transporteur'],['vesselName','Nom du navire / vol / véhicule'],['voyageNumber','Numéro de voyage'],['nextUpdate','Prochaine information attendue']] as const).map(([name,label])=><label key={name}>{label}<SuggestedInput name={name} defaultValue={data[name]||''} maxLength={500}/></label>)}
  <label>Information utile pour le client<textarea name="clientInformation" defaultValue={data.clientInformation||''} maxLength={1500} rows={3}/></label>
  {assetFields.map(([name,label])=><div key={name} style={{marginTop:14}}><label>{label}<select name={name} defaultValue={data[name]||''}><option value="">Sans image</option>{documents.filter(d=>d.shared&&['image/jpeg','image/png'].includes(d.mime)&&d.size<=2*1024*1024).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label><label>Ou importer une nouvelle image<input name={name+'File'} type="file" accept="image/jpeg,image/png"/></label></div>)}
  <p className="tiny muted">JPG ou PNG, 2 Mo maximum par image. Les images importées ici sont partagées uniquement dans ce dossier privé. Pour une signature, utilisez exclusivement un fichier fourni avec l’autorisation du signataire.</p>

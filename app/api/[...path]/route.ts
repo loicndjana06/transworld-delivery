@@ -1,4 +1,7 @@
+import {billingAssets} from '../../billing-assets';
+import {workflowRoutes} from '../../workflow-server';
 import {uploadRoute} from '@/lib/uploads';
+import {directMoneyRoute} from '../../direct-invoice';
 import {serviceTasks,confirmService} from '@/lib/services';
 import {backupRoute} from '../../backup';
 import {businessRoutes,getDetails,detailData,partnerData,companyData,documentKinds,unpack} from '../../business';
@@ -63,12 +66,12 @@ async function handle(req:Request){
   const ref=clean(url.searchParams.get('ref'),60).toUpperCase();if(!/^KC-[A-F0-9]{16}$/.test(ref))return json({error:'Aucun dossier trouvé. Vérifiez votre référence.'},404);
   const s:any=await db.prepare('SELECT * FROM shipments WHERE ref=?').bind(ref).first();if(!s)return json({error:'Aucun dossier trouvé. Vérifiez votre référence.'},404);
   const access=url.searchParams.get('access')||'',privateAccess=s.owner===owner||(access&&s.token_hash===await hash(access)&&s.token_expiry>now());
-  const rawEvents=(await db.prepare('SELECT id,type,place,date,note,planned,published,created,published_at,lat,lng,mode FROM events WHERE shipment_id=? AND published=1 ORDER BY date,created').bind(s.id).all()).results;
-  const events=rawEvents.map((e:any)=>({...e,note:privateAccess?e.note:''}));
-  const extra=privateAccess?await getDetails(db,s.id):{};delete extra.purchaseRates;
+  const rawEvents=(await db.prepare('SELECT id,type,place,date,note,planned,published,created,published_at,lat,lng,mode,source FROM events WHERE shipment_id=? AND published=1 ORDER BY date,created').bind(s.id).all()).results;
+  const events=rawEvents.map((e:any)=>(()=>{const {source,...rest}=e;return {...rest,estimated:source==='Estimation de parcours',note:privateAccess?e.note:''};})());
+  const extra=privateAccess?await getDetails(db,s.id):{};delete extra.purchaseRates;delete extra.adminBillingDraft;
   const documents=privateAccess?(await db.prepare('SELECT d.id,d.name,d.mime,d.size,d.created,dd.kind FROM documents d LEFT JOIN document_details dd ON dd.document_id=d.id WHERE d.shipment_id=? AND d.shared=1 ORDER BY d.created DESC').bind(s.id).all()).results:[];
   const notices=privateAccess?(await db.prepare('SELECT id,title,body,created FROM notifications WHERE shipment_id=? ORDER BY created DESC LIMIT 30').bind(s.id).all()).results:[];
-  const invoices=privateAccess?(await db.prepare('SELECT id,number,reason,stage,provider,signer,usd,gnf,gnf_rate,rate_source,status,created FROM invoices WHERE shipment_id=? ORDER BY created').bind(s.id).all()).results:[];
+  const invoices=privateAccess?(await db.prepare('SELECT metadata,id,number,reason,stage,provider,signer,usd,gnf,gnf_rate,rate_source,status,created FROM invoices WHERE shipment_id=? ORDER BY created').bind(s.id).all()).results.map((i:any)=>{const {metadata,...rest}=i;const m=unpack(metadata);return {...rest,displayMoney:m.displayMoney||null,billing:{title:m.title||'',reason:rest.reason,serviceAction:m.serviceAction||'',requiresPayment:m.requiresPayment===true,dueDate:m.dueDate||'',instructions:m.instructions||'',documentKind:m.documentKind||'Facture'}};}):[];
   const corrections=privateAccess?(await db.prepare('SELECT c.id,c.invoice_id,c.data,c.created FROM invoice_corrections c JOIN invoices i ON i.id=c.invoice_id WHERE i.shipment_id=?').bind(s.id).all()).results.map((c:any)=>({...c,data:unpack(c.data)})):[];
   return json({services:privateAccess?await serviceTasks(db,s.id):[],notices,invoices,corrections,extra,shipment:{ref:s.ref,origin:s.origin,destination:s.destination,status:s.status,eta:s.eta,updated:s.updated,...(privateAccess?{id:s.id,item:s.item,category:s.category,client:s.client,container:s.container,delivery:s.delivery,orderUsd:s.order_usd,orderGnf:s.order_gnf}:{})},events,documents,privateAccess:!!privateAccess});
  }
@@ -84,11 +87,13 @@ async function handle(req:Request){
   const bytes=await proformaPdf({...s,extra:await getDetails(db,s.id),issuer:await companyData(db,s.owner)});
   return new Response(bytes as any,{headers:{'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="PF-${s.ref}.pdf"`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
  }
- if(p[0]==='invoice'&&req.method==='GET'){
+ if(['invoice','payment-receipt'].includes(p[0])&&req.method==='GET'){
   const i:any=await db.prepare('SELECT * FROM invoices WHERE id=?').bind(p[1]).first();if(!i)return json({error:'Facture introuvable.'},404);
   const s:any=await db.prepare('SELECT * FROM shipments WHERE id=?').bind(i.shipment_id).first();const a=url.searchParams.get('access')||'';
   if(!s||!(s.owner===owner||(a&&s.token_hash===await hash(a)&&s.token_expiry>now())))return json({error:'Accès refusé.'},403);
-  const bytes=await invoicePdf(s,{...i,...unpack(i.metadata),issuer:unpack(i.metadata).issuer||await companyData(db,s.owner)});return new Response(bytes as any,{headers:{'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="${i.number}.pdf"`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+  if(p[0]==='payment-receipt'&&i.status!=='paye')return json({error:'L’encaissement doit être confirmé avant de délivrer un reçu.'},409);
+  const receipt=p[0]==='payment-receipt'?await db.prepare('SELECT created FROM audit WHERE owner=? AND shipment_id=? AND action=? AND detail=? ORDER BY created DESC LIMIT 1').bind(s.owner,s.id,'Paiement vérifié',i.number).first():null;
+  const bytes=await invoicePdf({...s,assets:await billingAssets(db,env.BUCKET,s.id)},{...i,...unpack(i.metadata),...(p[0]==='payment-receipt'?{kind:'REÇU DE PAIEMENT',title:'Encaissement confirmé · '+i.number,paidAt:receipt?.created}:{}),issuer:unpack(i.metadata).issuer||await companyData(db,s.owner)});return new Response(bytes as any,{headers:{'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="${i.number}.pdf"`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
  }
  if(p[0]==='rectification'&&req.method==='GET'){
   const c:any=await db.prepare('SELECT c.*,i.shipment_id,i.number FROM invoice_corrections c JOIN invoices i ON i.id=c.invoice_id WHERE c.id=?').bind(p[1]).first();if(!c)return json({error:'Rectification introuvable.'},404);
@@ -126,6 +131,10 @@ async function handle(req:Request){
   const session=cookie?await db.prepare('SELECT id FROM admin_sessions WHERE id=? AND owner=? AND expires>?').bind(await hash(cookie+runtime.ADMIN_TEST_PASSWORD),owner,now()).first():null;
   if(!session)return json({error:'Ouvrez la gestion avec votre mot de passe.'},401);
  }
+ if(p[0]==='locations'&&req.method==='GET'){
+  const entries=(await db.prepare('SELECT e.place,e.lat,e.lng,e.mode FROM events e JOIN shipments s ON s.id=e.shipment_id WHERE s.owner=? AND e.lat IS NOT NULL AND e.lng IS NOT NULL ORDER BY e.created DESC LIMIT 1000').bind(owner).all()).results;
+  const seen=new Set<string>();return json(entries.filter((e:any)=>{const k=e.place+'|'+e.lat+'|'+e.lng;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,200));
+ }
  if(p[0]==='suggestions'&&req.method==='GET'){
   const rows=(await db.prepare('SELECT s.client,s.contact,s.item,s.origin,s.destination,s.container,s.delivery,s.email,sd.data FROM shipments s LEFT JOIN shipment_details sd ON sd.shipment_id=s.id WHERE s.owner=? ORDER BY s.updated DESC LIMIT 500').bind(owner).all()).results;
   const fields=['client','contact','item','origin','destination','container','delivery','email','sellerName','sellerAddress','sellerContact','sellerRegistration','deliveryCountry','deliveryCity','deliveryAddress','deliverySlot','orderSigner','rateSource'];const values:any={};for(const k of fields)values[k]=[];
@@ -150,7 +159,7 @@ async function handle(req:Request){
  if(p[0]==='export'&&req.method==='GET')return json({version:1,shipments:(await db.prepare('SELECT * FROM shipments WHERE owner=?').bind(owner).all()).results.map((x:any)=>{const{token_hash,token_expiry,...rest}=x;return rest;}),events:(await db.prepare('SELECT e.* FROM events e JOIN shipments s ON s.id=e.shipment_id WHERE s.owner=?').bind(owner).all()).results,invoices:(await db.prepare('SELECT i.* FROM invoices i JOIN shipments s ON s.id=i.shipment_id WHERE s.owner=?').bind(owner).all()).results});
  if(p[0]==='audit'&&req.method==='GET')return json((await db.prepare('SELECT a.action,a.detail,a.created,s.ref FROM audit a LEFT JOIN shipments s ON s.id=a.shipment_id WHERE a.owner=? ORDER BY a.created DESC LIMIT 100').bind(owner).all()).results);
  if(p[0]==='shipments'&&p.length===1){
-  if(req.method==='GET')return json((await db.prepare('SELECT id,ref,client,contact,item,category,origin,destination,container,email,delivery,eta,status,created,updated,version,(SELECT COUNT(*) FROM invoices WHERE shipment_id=shipments.id AND status=\'preuve_recue\') AS proof_count FROM shipments WHERE owner=? ORDER BY updated DESC LIMIT 500').bind(owner).all()).results);
+  if(req.method==='GET')return json((await db.prepare('SELECT id,ref,client,contact,item,category,origin,destination,container,email,delivery,eta,status,created,updated,version,(SELECT COUNT(*) FROM invoices WHERE shipment_id=shipments.id AND status=\'preuve_recue\') AS proof_count,(SELECT COUNT(*) FROM invoices i WHERE i.shipment_id=shipments.id AND i.status=\'a_regler\' AND json_extract(i.metadata,\'$.dueDate\')<>\'\' AND json_extract(i.metadata,\'$.dueDate\')<? AND NOT EXISTS (SELECT 1 FROM invoice_corrections c WHERE c.invoice_id=i.id)) AS overdue_count FROM shipments WHERE owner=? ORDER BY updated DESC LIMIT 500').bind(now().slice(0,10),owner).all()).results);
   const b=await req.json() as any;if(b.email&&!/^\S+@\S+\.\S+$/.test(b.email))return json({error:'Courriel invalide.'},400);for(const f of ['client'])if(!clean(b[f]))return json({error:'Renseignez les champs obligatoires.'},400);
   if(b.eta&&!Number.isFinite(Date.parse(b.eta)))return json({error:'Estimation invalide.'},400);
   const vb=Number(b.vehicleBase),vr=Number(b.vehicleUsdRate),vg=Number(b.vehicleGnfRate),hasPrice=!!(b.vehicleBase||b.vehicleUsdRate||b.vehicleGnfRate);
@@ -166,6 +175,7 @@ async function handle(req:Request){
  if(p[0]!=='shipments'||!p[1])return json({error:'Action inconnue.'},404);
  const id=p[1],s:any=await db.prepare('SELECT * FROM shipments WHERE id=? AND owner=?').bind(id,owner).first();if(!s)return json({error:'Accès refusé.'},403);
  if(p.length===2&&req.method==='GET'){const {token_hash,token_expiry,...shipment}=s;return json({services:await serviceTasks(db,id),extra:await getDetails(db,id),corrections:(await db.prepare('SELECT c.* FROM invoice_corrections c JOIN invoices i ON i.id=c.invoice_id WHERE i.shipment_id=?').bind(id).all()).results.map((c:any)=>({...c,data:unpack(c.data)})),invoices:(await db.prepare('SELECT * FROM invoices WHERE shipment_id=? ORDER BY created DESC').bind(id).all()).results,notices:(await db.prepare('SELECT * FROM notifications WHERE shipment_id=? ORDER BY created DESC LIMIT 30').bind(id).all()).results,shipment,events:(await db.prepare('SELECT * FROM events WHERE shipment_id=? ORDER BY date DESC,created DESC').bind(id).all()).results,documents:(await db.prepare('SELECT d.id,d.name,d.mime,d.size,d.shared,d.created,dd.kind FROM documents d LEFT JOIN document_details dd ON dd.document_id=d.id WHERE d.shipment_id=? ORDER BY created DESC').bind(id).all()).results});}
+ const workflow=await workflowRoutes(req,p,db,owner,s);if(workflow)return workflow;
  if(req.method!=='POST')return json({error:'Méthode non autorisée.'},405);
  if(p[2]==='service-confirm')return confirmService(req,db,owner,id,runtime);
  if(p[2]==='update'){
@@ -176,9 +186,10 @@ async function handle(req:Request){
  }
  if(p[2]==='notify'){
   const b=await req.json() as any;if(!clean(b.title)||!clean(b.body))return json({error:'Renseignez le titre et le message.'},400);
-  await db.prepare('INSERT INTO notifications (id,owner,shipment_id,title,body,created,email_status,attempts) VALUES (?,?,?,?,?,?,?,0)').bind(uuid(),owner,id,clean(b.title,150),clean(b.body,1500),now(),'non_configure').run();await sendPending(db,runtime,owner,id);return json({ok:true});
+  await db.prepare('INSERT INTO notifications (id,owner,shipment_id,title,body,created,email_status,attempts) VALUES (?,?,?,?,?,?,?,0)').bind(uuid(),owner,id,clean(b.title,150),clean(b.body,1500),now(),b.sendEmail===false?'desactive':'non_configure').run();await sendPending(db,runtime,owner,id);return json({ok:true});
  }
  if(p[2]==='retry-mail'){await sendPending(db,runtime,owner,id);return json({ok:true});}
+ const direct=await directMoneyRoute(req,p,db,owner,s,runtime);if(direct)return direct;
  if(p[2]==='invoices'){
   const b=await req.json() as any,base=Number(b.base),ur=Number(b.usdRate),gr=Number(b.gnfRate);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(clean(b.rateDate))||!Number.isFinite(Date.parse(b.rateDate)))return json({error:'Renseignez la date réelle des taux.'},400);
@@ -225,7 +236,7 @@ async function handle(req:Request){
   const secret=token(),expiry=new Date(Date.now()+7*86400000).toISOString();await db.batch([db.prepare('UPDATE shipments SET token_hash=?,token_expiry=? WHERE id=? AND owner=?').bind(await hash(secret),expiry,id,owner),db.prepare('INSERT INTO audit (id,owner,shipment_id,action,detail,created) VALUES (?,?,?,?,?,?)').bind(uuid(),owner,id,'Lien privé renouvelé','Ancien lien révoqué',now())]);return json({ref:s.ref,access:secret,expiry});
  }
  if(p[2]==='events'){
-  const b=await req.json() as any,planned=!!b.planned,published=b.published!==false,date=clean(b.date,40);
+  const b=await req.json() as any;if(b.positionKind==='estimated'){b.type='Information';b.source='Estimation de parcours';b.note='Zone estimée — position non confirmée. '+clean(b.note,1400);}else if(b.source==='Estimation de parcours')return json({error:'Choisissez la nature estimée pour cette position.'},400);const planned=!!b.planned,published=b.published!==false,date=clean(b.date,40);
   if((b.lat!=null&&b.lat!=='')!==(b.lng!=null&&b.lng!==''))return json({error:'Renseignez latitude et longitude ensemble.'},400);
   if((b.lat!==undefined&&b.lat!==''&&(!Number.isFinite(Number(b.lat))||Math.abs(Number(b.lat))>90))||(b.lng!==undefined&&b.lng!==''&&(!Number.isFinite(Number(b.lng))||Math.abs(Number(b.lng))>180)))return json({error:'Coordonnées invalides.'},400);
   if(!eventTypes.includes(b.type)||!clean(b.place)||!clean(b.source)||!validActualDate(date,planned))return json({error:'Vérifiez le lieu, la source et la date. Une confirmation ne peut pas être future.'},400);

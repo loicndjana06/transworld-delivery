@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import React from 'react';
+import {renderToString} from 'react-dom/server';
+import {JSDOM} from 'jsdom';
+import esbuild from 'esbuild';
+await esbuild.build({entryPoints:['app/money-fields.tsx'],outfile:'.sites-runtime/money-fields-test.mjs',bundle:true,platform:'node',format:'esm',jsx:'automatic',packages:'external'});
+const {MoneyFields,MoneyDisplay}=await import('../.sites-runtime/money-fields-test.mjs');
+const html=renderToString(React.createElement(MoneyFields,{required:true,amount:'50000',currency:'GNF'}));
+const d=new JSDOM(html).window.document;
+assert.ok(d.querySelector('input[name=displayAmount][required]'));assert.equal(d.querySelector('select[name=displayCurrency]').value,'GNF');
+for(const code of ['USD','GNF','EUR','XAF','XOF','CNY','AED'])assert.ok(d.querySelector('option[value='+code+']'));
+assert.equal(d.querySelectorAll('input').length,1);
+const display=renderToString(React.createElement(MoneyDisplay,{invoice:{displayMoney:{amount:'50000',currency:'GNF'},usd:0,gnf:0}}));
+assert.ok(display.includes('GNF'));assert.ok(!display.includes('USD'));
+console.log('PASS — saisie montant seul, devise sélectionnable, GNF sans USD ni taux.');

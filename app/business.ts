@@ -1,11 +1,14 @@
+import {validateRoute} from './maritime';
 import {sendPending} from './notifier';
+import {parseMoney} from './money';
 import {clean,validActualDate,statusFromEvents,eventTypes} from './domain';
-export const documentKinds=['Facture d’achat','Bon de commande','Facture de prestation','Bill of Lading','AWB','Justificatif de frais','Document douanier','Preuve de remise','Autre'];
+export const documentKinds=['Facture d’achat','Bon de commande','Facture de prestation','Bill of Lading','AWB','Justificatif de frais','Document douanier','Preuve de remise','Photo de réception','Photo de chargement','Photo de remise','Autre'];
 export const serviceNames=['Prix d’achat du produit','Enlèvement et préacheminement','Empotage et arrimage','Fret maritime','Fret aérien','Manutention au terminal','Documentation','Honoraires de transit','Honoraires de dédouanement','Droits et taxes à l’importation','Magasinage ou stockage','Dépotage','Livraison finale','Surestaries','Détention'];
 export const unpack=(v:any,fallback:any={})=>{try{return JSON.parse(v||'{}');}catch{return fallback;}};
 export function detailData(b:any){const out:any={};for(const k of ['vin','purchaseReference','firstInvoiceReference','deliveryCountry','deliveryCity','deliveryType','deliveryAddress','deliverySlot','destinationModel','rateSource','rateDate','serviceConfirmation','segments'])out[k]=clean(b[k],k==='segments'?3000:500);if(out.vin&&!/^[A-HJ-NPR-Z0-9]{17}$/i.test(out.vin))throw new Error('VIN : 17 caractères, sans I, O ni Q.');if(out.rateDate&&!/^\d{4}-\d{2}-\d{2}$/.test(out.rateDate))throw new Error('Date des taux invalide.');if(out.deliveryType&&!['Port','Aéroport','Adresse','Entrepôt'].includes(out.deliveryType))throw new Error('Type de remise invalide.');out.destinationConfirmed=b.destinationConfirmed===true;return out;}
-export const partnerKeys=['sellerName','sellerAddress','sellerContact','sellerRegistration','sellerRole','clientInformation','orderSigner','orderSignedAt','transportMode','sellerLogoDocument','platformLogoDocument','productPhotoDocument','signatureDocument'];
+export const partnerKeys=['sellerName','sellerAddress','sellerContact','sellerRegistration','sellerRole','clientInformation','orderSigner','orderSignedAt','transportMode','sellerLogoDocument','platformLogoDocument','productPhotoDocument','signatureDocument','purchaseAmount','purchaseCurrency','transportCompany','vesselName','voyageNumber','nextUpdate'];
 export async function partnerData(db:any,id:string,b:any,before:any={}){const out:any={};for(const key of partnerKeys)out[key]=Object.prototype.hasOwnProperty.call(b,key)?clean(b[key],key==='clientInformation'?1500:500):(before[key]||'');
+ const money=parseMoney(out.purchaseAmount,out.purchaseCurrency);if(money){out.purchaseAmount=money.amount;out.purchaseCurrency=money.currency;}
  if(out.transportMode&&!['Maritime','Aérien','Terrestre','Combiné'].includes(out.transportMode))throw new Error('Mode de transport invalide.');
  if(out.sellerRole&&!['Vendeur','Vendeur et expéditeur','Expéditeur mandaté'].includes(out.sellerRole))throw new Error('Rôle du partenaire invalide.');
  if(out.orderSignedAt&&(!/^\d{4}-\d{2}-\d{2}$/.test(out.orderSignedAt)||!Number.isFinite(Date.parse(out.orderSignedAt))||out.orderSignedAt>new Date().toISOString().slice(0,10)))throw new Error('Date réelle de signature invalide.');
@@ -17,23 +20,25 @@ export async function companyData(db:any,owner:string){return unpack((await db.p
 const json=(x:any,status=200)=>Response.json(x,{status,headers:{'Cache-Control':'no-store'}}),uid=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
 export async function businessRoutes(req:Request,p:string[],db:any,owner:string,runtime:any={}){
  if(p[0]==='models'){
-  if(req.method==='GET')return json((await db.prepare('SELECT * FROM admin_models WHERE owner=? ORDER BY kind,name').bind(owner).all()).results.map((r:any)=>({...r,config:unpack(r.config)})));
-  const b:any=await req.json();if(!['country','service'].includes(b.kind)||!clean(b.name))return json({error:'Nom et type requis.'},400);
-  const old:any=b.id?await db.prepare('SELECT * FROM admin_models WHERE id=? AND owner=?').bind(b.id,owner).first():null;
+  if(req.method==='GET')return json((await db.prepare('SELECT * FROM admin_models WHERE owner=? ORDER BY kind,name').bind(owner).all()).results.map((r:any)=>({...r,kind:unpack(r.config).entity==='route'?'route':r.kind,config:unpack(r.config)})));
+  const b:any=await req.json();if(!['country','service','route'].includes(b.kind)||!clean(b.name))return json({error:'Nom et type requis.'},400);
+  let old:any=b.id?await db.prepare('SELECT * FROM admin_models WHERE id=? AND owner=?').bind(b.id,owner).first():null;if(old&&unpack(old.config).entity==='route')old={...old,kind:'route'};
   if(old&&old.kind!==b.kind)return json({error:'Type de modèle incompatible.'},400);
   if(b.id&&!old)return json({error:'Modèle inaccessible.'},403);
   if(old&&Number(b.version)!==old.version)return json({error:'Modèle modifié. Actualisez.'},409);
   if(['delete','duplicate'].includes(b.action)&&!old)return json({error:'Choisissez un modèle existant.'},400);
   if(b.action==='delete'){await db.batch([db.prepare('DELETE FROM admin_models WHERE id=? AND owner=? AND version=?').bind(old.id,owner,old.version),db.prepare('INSERT INTO audit SELECT ?,?,?,?,?,? WHERE changes()>0').bind(uid(),owner,null,'Modèle supprimé',old.name,now())]);return json({ok:true});}
-  const raw=b.action==='duplicate'?unpack(old.config):b.config||{};let cfg:any;
-  if(b.kind==='country'){
-   cfg={places:clean(raw.places,4000),stages:clean(raw.stages,4000),formalities:clean(raw.formalities,4000),officialSource:clean(raw.officialSource,1000),tariffs:Array.isArray(raw.tariffs)?raw.tariffs.slice(0,60).map((t:any)=>({serviceId:clean(t.serviceId),label:clean(t.label),base_xaf:t.base_xaf===''||t.base_xaf==null?null:Number(t.base_xaf),reviewed:b.action==='duplicate'?false:t.reviewed===true})):[]};
+  const raw=b.action==='duplicate'?unpack(old.config):b.config||{};let cfg:any;try{
+  if(b.kind==='route'){cfg={entity:'route',...validateRoute({...raw,name:clean(b.name)})};}
+  else if(b.kind==='country'){
+   cfg={places:clean(raw.places,4000),stages:clean(raw.stages,4000),formalities:clean(raw.formalities,4000),officialSource:clean(raw.officialSource,1000),tariffs:Array.isArray(raw.tariffs)?raw.tariffs.slice(0,60).map((t:any)=>({serviceId:clean(t.serviceId),label:clean(t.label),displayMoney:parseMoney(t.displayAmount??t.displayMoney?.amount,t.displayCurrency??t.displayMoney?.currency),base_xaf:t.base_xaf===''||t.base_xaf==null?null:Number(t.base_xaf),reviewed:b.action==='duplicate'?false:t.reviewed===true})):[]};
    if(cfg.officialSource&&!/^https:\/\//.test(cfg.officialSource))return json({error:'La source doit être une URL HTTPS officielle vérifiée.'},400);
    if(cfg.tariffs.some((t:any)=>t.base_xaf!==null&&(!Number.isFinite(t.base_xaf)||t.base_xaf<0)))return json({error:'Tarif invalide.'},400);
-  }else{cfg={category:['Honoraires','Droits et taxes','Transport','Autre'].includes(raw.category)?raw.category:'Autre',description:clean(raw.description,2000),provider:clean(raw.provider),base_xaf:raw.base_xaf===''||raw.base_xaf==null?null:Number(raw.base_xaf),reviewed:b.action==='duplicate'?false:raw.reviewed===true};if(cfg.base_xaf!==null&&(!Number.isFinite(cfg.base_xaf)||cfg.base_xaf<0))return json({error:'Montant invalide.'},400);}
+  }else{cfg={displayMoney:parseMoney(raw.displayAmount??raw.displayMoney?.amount,raw.displayCurrency??raw.displayMoney?.currency),category:['Honoraires','Droits et taxes','Transport','Autre'].includes(raw.category)?raw.category:'Autre',description:clean(raw.description,2000),provider:clean(raw.provider),base_xaf:raw.base_xaf===''||raw.base_xaf==null?null:Number(raw.base_xaf),reviewed:b.action==='duplicate'?false:raw.reviewed===true};if(cfg.base_xaf!==null&&(!Number.isFinite(cfg.base_xaf)||cfg.base_xaf<0))return json({error:'Montant invalide.'},400);}
+  }catch(e:any){return json({error:e.message||'Montant ou devise invalide.'},400);}
   const id=b.action==='duplicate'||!old?uid():old.id,created=now();
-  const duplicate=await db.prepare('SELECT id FROM admin_models WHERE owner=? AND kind=? AND name=? AND id<>?').bind(owner,b.kind,clean(b.name),id).first();if(duplicate)return json({error:'Ce nom existe déjà.'},409);
-  const q=id===old?.id?db.prepare('UPDATE admin_models SET name=?,config=?,version=version+1,updated=? WHERE id=? AND owner=? AND version=?').bind(clean(b.name),JSON.stringify(cfg),created,id,owner,old.version):db.prepare('INSERT INTO admin_models VALUES (?,?,?,?,?,0,?,?)').bind(id,owner,b.kind,clean(b.name),JSON.stringify(cfg),created,created);
+  const duplicate=await db.prepare('SELECT id FROM admin_models WHERE owner=? AND kind=? AND name=? AND id<>?').bind(owner,b.kind==='route'?'country':b.kind,clean(b.name),id).first();if(duplicate)return json({error:'Ce nom existe déjà.'},409);
+  const q=id===old?.id?db.prepare('UPDATE admin_models SET name=?,config=?,version=version+1,updated=? WHERE id=? AND owner=? AND version=?').bind(clean(b.name),JSON.stringify(cfg),created,id,owner,old.version):db.prepare('INSERT INTO admin_models VALUES (?,?,?,?,?,0,?,?)').bind(id,owner,b.kind==='route'?'country':b.kind,clean(b.name),JSON.stringify(cfg),created,created);
   const out=await db.batch([q,db.prepare('INSERT INTO audit SELECT ?,?,?,?,?,? WHERE changes()>0').bind(uid(),owner,null,b.action==='duplicate'?'Modèle dupliqué':'Modèle enregistré',clean(b.name),created)]);if(!out[0].meta.changes)return json({error:'Modification concurrente.'},409);return json({ok:true,id});
  }
  if(p[0]==='company'){

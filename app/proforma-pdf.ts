@@ -1,4 +1,5 @@
 import {PDFDocument,rgb} from 'pdf-lib';
+import {formatMoney} from './money';
 import fontkit from '@pdf-lib/fontkit';
 import {regular,bold as boldData} from './pdf-fonts';
 
@@ -37,11 +38,11 @@ export async function proformaPdf(s:any){
   extra.destinationConfirmed?'Destination et service confirmés par l’agence.':'Destination, disponibilité du service et frais à confirmer par l’agence.'
  ]);
  const hasPrice=s.order_usd!=null&&s.order_gnf!=null&&Number.isFinite(Number(s.order_usd))&&Number.isFinite(Number(s.order_gnf));
- ensure(90);page.drawRectangle({x:M,y:H-y-24,width:CW,height:24,color:ink});text('DÉSIGNATION',M+12,y+6,9,true,white);text('MONTANT USD',W-210,y+6,9,true,white);text('ÉQUIVALENT GNF',W-125,y+6,8,true,white);y+=32;
- text('Prix du produit / véhicule seul',M+12,y,10,true);text(hasPrice?Number(s.order_usd).toFixed(2):'À renseigner',W-210,y,10,true);text(hasPrice?Math.round(s.order_gnf).toLocaleString('fr-FR'):'À renseigner',W-125,y,10,true);y+=27;
+ ensure(90);page.drawRectangle({x:M,y:H-y-24,width:CW,height:24,color:ink});text('DÉSIGNATION',M+12,y+6,9,true,white);text(extra.purchaseAmount?'MONTANT ET DEVISE':'MONTANT USD',W-210,y+6,9,true,white);if(!extra.purchaseAmount)text('ÉQUIVALENT GNF',W-125,y+6,8,true,white);y+=32;
+ text('Prix du produit / véhicule seul',M+12,y,10,true);if(extra.purchaseAmount){const amount=formatMoney({amount:extra.purchaseAmount,currency:extra.purchaseCurrency});const amountLines=lines(amount,175,10,true);for(const [index,line] of amountLines.entries())text(line,W-210,y+index*13,10,true);y+=Math.max(27,amountLines.length*13+10);}else{text(hasPrice?Number(s.order_usd).toFixed(2):'À renseigner',W-210,y,10,true);text(hasPrice?Math.round(s.order_gnf).toLocaleString('fr-FR'):'À renseigner',W-125,y,10,true);y+=27;}
  text('Achat externe : montant de référence, sans appel de fonds de l’agence.',M+12,y,9,false,muted);y+=23;
  section('CONVERSION & PRESTATIONS EXCLUES',[
-  'Source des taux : '+(extra.rateSource||'À renseigner')+' | Date des taux : '+(extra.rateDate||'À renseigner'),
+  extra.purchaseAmount?'Montant libre dans la devise choisie, sans conversion automatique.':'Source des taux : '+(extra.rateSource||'À renseigner')+' | Date des taux : '+(extra.rateDate||'À renseigner'),
   'Transport, transit, formalités, droits et taxes, stockage et livraison finale exclus de ce montant. Ces prestations seront expliquées et facturées séparément selon les besoins réels du dossier.',
   'Toute prestation ultérieure précise son motif, son prestataire, ses justificatifs et ses instructions de paiement. Aucun tarif de destination n’est présumé.'
  ]);

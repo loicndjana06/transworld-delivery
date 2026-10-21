@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {JSDOM} from 'jsdom';
+import React,{act} from 'react';
+import {createRoot} from 'react-dom/client';
+import esbuild from 'esbuild';
+const dom=new JSDOM('<div id="root"></div>',{url:'https://cargo.test/'});
+for(const k of ['window','document','HTMLElement'])globalThis[k]=dom.window[k];
+globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+globalThis.ResizeObserver=class{observe(){}disconnect(){}};
+globalThis.requestAnimationFrame=fn=>{fn();return 1;};
+globalThis.fetch=async()=>Response.json({tileUrl:'https://tile.openstreetmap.org/{z}/{x}/{y}.png'});
+let icons=[],initialized=0,invalidated=0;
+globalThis.__leaflet={map(el){assert.equal(el.style.display,'block','Map must be visible BEFORE initialization');initialized++;return{fitBounds(){},invalidateSize(){invalidated++;},remove(){}};},tileLayer(){const layer={on(){return layer;},addTo(){return layer;},redraw(){}};return layer;},latLngBounds:points=>({isValid:()=>points.length>0}),polyline:()=>({addTo(){}}),divIcon:o=>{icons.push(o.html);return o;},marker:()=>{const marker={addTo:()=>marker,bindPopup(){},bindTooltip(){},openPopup(){}};return marker;}};
+await esbuild.build({entryPoints:['app/route-map.tsx'],outfile:'.sites-runtime/map-regression.mjs',bundle:true,platform:'node',format:'esm',jsx:'automatic',packages:'external',plugins:[{name:'mock-leaflet',setup(b){b.onResolve({filter:/^leaflet$/},()=>({path:'leaflet',namespace:'test'}));b.onLoad({filter:/.*/,namespace:'test'},()=>({contents:'export default globalThis.__leaflet',loader:'js'}));}}]});
+const {default:Map}=await import('../.sites-runtime/map-regression.mjs');const root=createRoot(document.getElementById('root'));
+for(const mode of ['Maritime','Aérien','Terrestre']){icons=[];await act(async()=>{root.render(React.createElement(Map,{events:[{id:mode,lat:29.9,lng:121.9,place:'Port <test>',date:'2026-10-18T12:00:00Z',type:'En transport',mode}],reference:'TEST',origin:'Chine',destination:'Conakry'}));});assert.ok(icons[0].includes(mode==='Maritime'?'M4 16':mode==='Aérien'?'m22 2':'M2 5'));assert.ok(document.body.textContent.includes('Chine'));assert.match(document.querySelector('.map-caption').textContent,/Position confirmée/);assert.doesNotMatch(document.querySelector('.route-map').textContent,/en attente de confirmation/);assert.ok(!document.body.textContent.includes('Ouvrir sur OpenStreetMap'));}
+await act(async()=>root.render(React.createElement(Map,{events:[],reference:'EMPTY'})));
+assert.ok(document.querySelector('.google-map.ready'),'Map initializes even before first geocoded event');
+assert.equal(initialized,4);assert.ok(invalidated>=4);
+const cargo=readFileSync('app/cargo.tsx','utf8');const follow=cargo.slice(cargo.indexOf("{trackTab==='Suivi'"));assert.ok(follow.indexOf('<RouteMap')<follow.indexOf('<JourneySummary'),'Map precedes details');
+await act(async()=>root.unmount());
+console.log('PASS — carte visible avant initialisation, trois icônes, carte sans étape, redimensionnement, carte avant détails.');

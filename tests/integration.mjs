@@ -73,6 +73,9 @@ assert.equal((await call('shipments/'+id+'/paid',{invoiceId:inv.data.id,verified
 assert.equal((await call('shipments/'+id+'/paid',{invoiceId:inv.data.id,verified:true})).status,200);
 assert.equal((await call('shipments/'+id)).data.invoices[0].status,'paye');
 assert.equal((await call('config',undefined,null)).status,200);
+assert.equal((await call('locations',undefined,null)).status,401);
+assert.equal((await call('locations')).status,200);
+assert.ok(Array.isArray((await call('locations')).data));
 assert.equal((await call('shipments/'+id+'/events',{...event,version:6,lat:100,lng:55,published:true})).status,400);
 assert.equal((await call('export')).status,200);
 const priced=await call('shipments',{...draft,item:'Prix de test',vehicleBase:5000000,vehicleUsdRate:.0017,vehicleGnfRate:8600});assert.equal(priced.status,201);
@@ -175,4 +178,75 @@ assert.equal((await call('document/'+photoId+'?inline=1&access='+minimal.data.ac
 assert.equal((await call('document/'+photoId+'?inline=1&access='+renewed.access,undefined,null)).status,403);
 assert.equal((await call('order/'+minimal.data.ref+'?access='+minimal.data.access,undefined,null)).status,200);
 console.log('PASS — dossier minimal sans facture, vendeur facultatif, conservation des données, suggestions réservées à l’admin, isolation des images et lecture client seule.');
+// Direct amounts: no exchange rate, preserved currency, private access and immutable corrections.
+{
+const companyBefore=(await call('company')).data;
+await call('company',{version:companyBefore.version,data:{...companyBefore.data,name:'Entreprise test',address:'Adresse test'}});
+const directShipment=await call('shipments',{client:'Client devise test',item:'Véhicule test',purchaseAmount:'11000',purchaseCurrency:'EUR'});
+assert.equal(directShipment.status,201);
+const ds=directShipment.data;
+assert.equal((await call('tracking?ref='+ds.ref+'&access='+ds.access,undefined,null)).data.extra.purchaseCurrency,'EUR');
+assert.equal((await call('shipments',{client:'Devise invalide',purchaseAmount:'5',purchaseCurrency:'BOGUS'})).status,400);
+const invoiceDraft={reason:'Prestation réelle de test',stage:'Préparation',provider:'Prestataire test',signer:'Responsable test',displayAmount:'50000',displayCurrency:'GNF'};
+const directInvoice=await call('shipments/'+ds.id+'/invoices',invoiceDraft);assert.equal(directInvoice.status,200);
+let directTracking=(await call('tracking?ref='+ds.ref+'&access='+ds.access,undefined,null)).data;
+assert.equal(directTracking.invoices[0].displayMoney.amount,'50000');assert.equal(directTracking.invoices[0].displayMoney.currency,'GNF');assert.equal(directTracking.invoices[0].metadata,undefined);
+const directPDF=await call('invoice/'+directInvoice.data.id+'?access='+ds.access,undefined,null);assert.equal(directPDF.status,200);writeFileSync('.sites-runtime/direct-currency-invoice.pdf',directPDF.data);
+assert.equal((await call('invoice/'+directInvoice.data.id,undefined,'operator-b')).status,403);
+assert.equal((await call('shipments/'+ds.id+'/invoices',{...invoiceDraft,displayAmount:'NaN'})).status,400);
+assert.equal((await call('shipments/'+ds.id+'/invoices',{...invoiceDraft,displayCurrency:'INVALID'})).status,400);
+const replacement=await call('shipments/'+ds.id+'/rectify',{invoiceId:directInvoice.data.id,kind:'Facture rectificative',reason:'Correction de test',signer:'Responsable test',displayAmount:'75.25',displayCurrency:'USD'});assert.equal(replacement.status,200);
+directTracking=(await call('tracking?ref='+ds.ref+'&access='+ds.access,undefined,null)).data;
+assert.equal(directTracking.corrections[0].data.displayMoney.currency,'USD');
+assert.ok(directTracking.invoices.some(i=>i.id===directInvoice.data.id&&i.displayMoney.currency==='GNF'),'Original preserved');
+const replacementId=directTracking.corrections[0].data.replacementInvoiceId;
+assert.equal((await call('shipments/'+ds.id+'/paid',{invoiceId:replacementId,verified:true})).status,200);
+assert.equal((await call('shipments/'+ds.id+'/rectify',{invoiceId:replacementId,kind:'Avoir intégral',reason:'Avoir de test',signer:'Responsable test'})).status,200);
+for(const currency of ['XAF','XOF','EUR','AED','CNY'])assert.equal((await call('shipments/'+ds.id+'/invoices',{...invoiceDraft,displayAmount:'123.45',displayCurrency:currency})).status,200);
+const currencyService=await call('models',{kind:'service',name:'Service devise directe',config:{displayAmount:'45000',displayCurrency:'XOF',reviewed:true}});assert.equal(currencyService.status,200);
+assert.equal((await call('models')).data.find(m=>m.id===currencyService.data.id).config.displayMoney.currency,'XOF');
+assert.equal((await call('models',{kind:'service',name:'Mauvaise devise',config:{displayAmount:'12',displayCurrency:'INVALID'}})).status,400);
+assert.equal((await call('proforma/'+ds.ref+'?access='+ds.access,undefined,null)).status,200);
+assert.equal((await call('order/'+ds.ref+'?access='+ds.access,undefined,null)).status,200);
+console.log('PASS — montant direct sans taux, GNF/USD/EUR/XAF/XOF/AED/CNY, PDF privé, correction et avoir, ancienne facture conservée.');
+}
+// Complete operations workflow: drafts are private; preview never publishes.
+{
+ const c=(await call('shipments',{client:'Workflow test',item:'Véhicule',origin:'Ningbo',destination:'Conakry'})).data;
+ const bid='shipments/'+c.id;
+ const d={title:'Manutention au terminal',reason:'Déchargement selon la prestation convenue.',stage:'Arrivée',provider:'Prestataire test',signer:'Responsable test',displayAmount:'150',displayCurrency:'USD',documentKind:'Pro forma',serviceAction:'Déchargement',sendEmail:false,requiresPayment:true,instructions:'Instructions test',dueDate:'2026-12-01'};
+ assert.equal((await call(bid+'/billing-draft',{draft:d,version:0},null)).status,401);
+ assert.equal((await call(bid+'/billing-draft',{draft:d,version:0},'operator-b')).status,403);
+ let r=await call(bid+'/billing-draft',{draft:d,version:0});assert.equal(r.status,200);assert.equal(r.data.version,1);
+ assert.equal((await call(bid+'/billing-draft',{draft:d,version:0})).status,409);
+ assert.equal((await call(bid+'/billing-draft')).data.draft.title,d.title);
+ let track=(await call('tracking?ref='+c.ref+'&access='+c.access,undefined,null)).data;
+ assert.equal(track.extra.adminBillingDraft,undefined);assert.equal(track.invoices.length,0);assert.equal(track.notices.length,0);
+ const preview=await call(bid+'/billing-preview',{draft:d});assert.equal(preview.status,200);assert.equal(preview.headers.get('content-type'),'application/pdf');writeFileSync('.sites-runtime/workflow-preview.pdf',preview.data);
+ assert.equal((await call(bid)).data.invoices.length,0);
+ const route={name:'Parcours test',mode:'Maritime',points:[{name:'Départ en mer',lat:29.7,lng:123.2},{name:'Approche',lat:9.35,lng:-13.95}]};
+ assert.equal((await call('models',{kind:'route',name:'Parcours test',config:route})).status,200);
+ assert.equal((await call('models',{kind:'route',name:'Coordonnées incorrectes',config:{...route,points:[{name:'Erreur',lat:100,lng:0}]}})).status,400);
+ assert.equal((await call(bid+'/route-config',{version:1,route})).status,200);
+ assert.equal((await call(bid+'/events',{version:2,type:'En transport',positionKind:'estimated',place:'Océan Indien',lat:-10,lng:77,source:'Agence',note:'Zone de transit estimée',date:'2026-10-20T10:00:00Z',published:true})).status,200);
+ track=(await call('tracking?ref='+c.ref+'&access='+c.access,undefined,null)).data;
+ assert.equal(track.shipment.status,'Enregistré');assert.equal(track.events[0].estimated,true);assert.equal(track.events[0].type,'Information');assert.equal(track.events[0].source,undefined);
+ const key=crypto.randomUUID();const issue=await call(bid+'/invoices',{...d,requestKey:key});assert.equal(issue.status,200);assert.equal((await call(bid+'/invoices',{...d,requestKey:key})).data.id,issue.data.id);
+ const out=(await call(bid)).data;assert.equal(out.invoices.length,1);assert.equal(out.notices.find(n=>n.title==='Pro forma disponible').email_status,'desactive');
+ track=(await call('tracking?ref='+c.ref+'&access='+c.access,undefined,null)).data;
+ assert.equal(track.invoices[0].billing.title,d.title);assert.equal(track.invoices[0].billing.instructions,d.instructions);assert.equal(track.extra.adminBillingDraft,undefined);
+ assert.equal((await call('invoice/'+issue.data.id,undefined,'operator-b')).status,403);
+ // A carrier-confirmed position is visible immediately, even while a payment is outstanding.
+ assert.equal((await call(bid+'/events',{version:3,type:'En transport',positionKind:'confirmed',place:'Position maritime confirmée',lat:-10,lng:77,mode:'Maritime',source:'Confirmation du transporteur',note:'Transit confirmé',date:'2026-10-20T11:00:00Z',published:true})).status,200);
+ track=(await call('tracking?ref='+c.ref+'&access='+c.access,undefined,null)).data;
+ assert.equal(track.shipment.status,'En transport');assert.equal(track.invoices[0].status,'a_regler');
+ assert.equal(track.events.find(e=>e.place==='Position maritime confirmée').estimated,false);
+ assert.equal(track.events.find(e=>e.place==='Position maritime confirmée').published,1);
+ assert.equal((await call('payment-receipt/'+issue.data.id+'?access='+c.access,undefined,null)).status,409);
+ assert.equal((await call(bid+'/paid',{invoiceId:issue.data.id,verified:true})).status,200);
+ assert.equal((await call('payment-receipt/'+issue.data.id,undefined,'operator-b')).status,403);
+ const confirmedReceipt=await call('payment-receipt/'+issue.data.id+'?access='+c.access,undefined,null);assert.equal(confirmedReceipt.status,200);writeFileSync('.sites-runtime/workflow-receipt.pdf',confirmedReceipt.data);
+ assert.equal((await call(bid+'/billing-draft',{clear:true,version:4})).status,200);
+ console.log('PASS — brouillon privé, aperçu PDF sans émission, parcours réutilisable, position estimée sans faux départ, publication idempotente, choix e-mail et position confirmée visible malgré un paiement attendu.');
+}
 await pg.close();
