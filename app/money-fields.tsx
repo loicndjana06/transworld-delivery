@@ -2,7 +2,9 @@
 import {useState} from 'react';
 import {currencyCodes,currencyName,formatMoney,invoiceAmount,invoiceMoney} from './money';
 export function MoneyFields({prefix='display',amount='',currency='USD',required=false,onChange}:{prefix?:string,amount?:string,currency?:string,required?:boolean,onChange?:(amount:string,currency:string)=>void}){
- const [value,setValue]=useState(String(amount||'')),[code,setCode]=useState(currency||'USD');
+ const [localValue,setValue]=useState(String(amount??'')),[localCode,setCode]=useState(currency||'USD');
+ // The composer owns the value. Catalogue/draft changes must update the input too.
+ const value=onChange?String(amount??''):localValue,code=onChange?(currency||'USD'):localCode;
  return <fieldset className="money-entry"><legend>Montant et devise affichés au client</legend><div className="form-grid"><label>Montant{required?' *':''}<input name={prefix+'Amount'} type="number" step="0.001" min={required?'0.001':'0'} required={required} value={value} onChange={e=>{setValue(e.target.value);onChange?.(e.target.value,code);}} placeholder="Saisir librement le montant"/></label><label>Devise<select name={prefix+'Currency'} value={code} onChange={e=>{setCode(e.target.value);onChange?.(value,e.target.value);}}>{currencyCodes.map(c=><option key={c} value={c}>{c} — {currencyName(c)}</option>)}</select></label></div><div className="money-preview"><span className="currency-chip">{code}</span><strong>{value&&Number.isFinite(Number(value))?formatMoney({amount:value,currency:code}):'Montant à renseigner'}</strong></div><small>Le client verra ce montant dans cette devise. Aucune conversion et aucun taux à renseigner.</small></fieldset>;
 }
 export function MoneyDisplay({invoice}:{invoice:any}){const m=invoiceMoney(invoice);return <span className="money-display">{m&&<span className="currency-chip">{m.currency}</span>}<span>{invoiceAmount(invoice)}</span></span>;}

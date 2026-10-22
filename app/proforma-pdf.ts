@@ -14,7 +14,7 @@ export async function proformaPdf(s:any){
  const text=(v:string,x:number,top:number,size=10,strong=false,color=ink)=>page.drawText(v,{x,y:H-top-size,size,font:strong?bold:font,color});
  const lines=(v:any,width:number,size=10,strong=false)=>{const f=strong?bold:font,out:string[]=[];let line='';for(const word of clean(v).split(/\s+/)){const next=line?line+' '+word:word;if(f.widthOfTextAtSize(next,size)<=width){line=next;continue;}if(line){out.push(line);line='';}let chunk='';for(const ch of word){if(chunk&&f.widthOfTextAtSize(chunk+ch,size)>width){out.push(chunk);chunk='';}chunk+=ch;}line=chunk;}if(line)out.push(line);return out.length?out:['Non renseigné'];};
  // All blocks measure wrapped text before drawing; long client data continues on a new page.
- function header(){page.drawRectangle({x:0,y:H-103,width:W,height:103,color:ink});text('TD',M,26,21,true,white);text('TRANSWORLD DELIVERY',M+48,24,18,true,white);text('TRANSPORT & SUIVI INTERNATIONAL',M+49,51,8,false,white);text('PRO FORMA',M,108,24,true);text('Récapitulatif du prix d’achat externe',M,140,11,false,muted);page.drawRectangle({x:M,y:H-163,width:CW,height:2,color:gold});y=167;}
+ function header(){page.drawRectangle({x:0,y:H-103,width:W,height:103,color:ink});text('TD',M,26,21,true,white);text('TRANSWORLD DELIVERY',M+48,24,18,true,white);text('TRANSPORT & SUIVI INTERNATIONAL',M+49,51,8,false,white);text('PRO FORMA ACHAT',M,108,24,true);text('Récapitulatif du prix d’achat externe',M,140,11,false,muted);page.drawRectangle({x:M,y:H-163,width:CW,height:2,color:gold});y=167;}
  function ensure(height:number){if(y+height>H-55){page=pdf.addPage([W,H]);header();}}
  function section(label:string,body:string[]){const wrapped=body.flatMap(v=>lines(v,CW-24));let n=0;while(n<wrapped.length){ensure(55);const count=Math.max(1,Math.min(wrapped.length-n,Math.floor((H-65-y-30)/14)));page.drawRectangle({x:M,y:H-y-23,width:CW,height:23,color:teal});text(label+(n?' - suite':''),M+12,y+5,9,true,white);y+=28;for(const line of wrapped.slice(n,n+count)){text(line,M+12,y,10);y+=13;}n+=count;y+=8;}}
  header();
@@ -53,5 +53,5 @@ export async function proformaPdf(s:any){
   'Signature / cachet authentiques : à apposer uniquement après validation.'
  ]);
  const pages=pdf.getPages();pages.forEach((p,index)=>{p.drawLine({start:{x:M,y:35},end:{x:W-M,y:35},color:gold,thickness:1});p.drawText('TRANSWORLD DELIVERY | PF-'+s.ref+' | '+(index+1)+' / '+pages.length,{x:M,y:21,font,size:8,color:muted});});
- pdf.setTitle('Pro forma - '+s.ref);pdf.setSubject('Prix d’achat externe uniquement - transport et prestations exclus');return pdf.save();
+ pdf.setTitle('Pro forma achat - '+s.ref);pdf.setSubject('Prix d’achat externe uniquement - transport et prestations exclus');return pdf.save();
 }

@@ -232,6 +232,7 @@ console.log('PASS — montant direct sans taux, GNF/USD/EUR/XAF/XOF/AED/CNY, PDF
  track=(await call('tracking?ref='+c.ref+'&access='+c.access,undefined,null)).data;
  assert.equal(track.shipment.status,'Enregistré');assert.equal(track.events[0].estimated,true);assert.equal(track.events[0].type,'Information');assert.equal(track.events[0].source,undefined);
  const key=crypto.randomUUID();const issue=await call(bid+'/invoices',{...d,requestKey:key});assert.equal(issue.status,200);assert.equal((await call(bid+'/invoices',{...d,requestKey:key})).data.id,issue.data.id);
+ assert.equal((await call(bid+'/invoices',{...d,requestKey:key,displayAmount:'5000'})).status,409,'Idempotency must never return the old invoice after the entered amount changes');
  const out=(await call(bid)).data;assert.equal(out.invoices.length,1);assert.equal(out.notices.find(n=>n.title==='Pro forma disponible').email_status,'desactive');
  track=(await call('tracking?ref='+c.ref+'&access='+c.access,undefined,null)).data;
  assert.equal(track.invoices[0].billing.title,d.title);assert.equal(track.invoices[0].billing.instructions,d.instructions);assert.equal(track.extra.adminBillingDraft,undefined);

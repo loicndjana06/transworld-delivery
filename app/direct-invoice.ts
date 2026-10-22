@@ -22,7 +22,16 @@ export async function directMoneyRoute(req:Request,p:string[],db:any,owner:strin
   if(b.serviceId&&!await db.prepare('SELECT id FROM admin_models WHERE id=? AND owner=? AND kind=?').bind(clean(b.serviceId),owner,'service').first())return json({error:'Prestation inaccessible.'},403);
   const justification=clean(b.justificationDocument);if(justification&&!await db.prepare('SELECT id FROM documents WHERE id=? AND shipment_id=?').bind(justification,s.id).first())return json({error:'Justificatif inaccessible.'},403);
   const requestKey=!original&&typeof b.requestKey==='string'&&/^[0-9a-f-]{36}$/i.test(b.requestKey)?b.requestKey:null;
-  if(requestKey){const prior:any=await db.prepare('SELECT id,shipment_id FROM invoices WHERE id=?').bind(requestKey).first();if(prior)return prior.shipment_id===s.id?json({ok:true,id:prior.id}):json({error:'Requête incompatible.'},409);}
+  if(requestKey){
+   const prior:any=await db.prepare('SELECT * FROM invoices WHERE id=?').bind(requestKey).first();
+   if(prior){
+    if(prior.shipment_id!==s.id)return json({error:'Requête incompatible.'},409);
+    const pm=invoiceMoney(prior),meta=unpack(prior.metadata);
+    const unchanged=pm&&Number(pm.amount)===Number(money.amount)&&pm.currency===money.currency&&prior.reason===clean(b.reason,1000)&&prior.stage===clean(b.stage)&&prior.provider===clean(b.provider)&&prior.signer===clean(b.signer)&&meta.title===(clean(b.title,200)||clean(b.reason,1000))&&meta.documentKind===(b.documentKind==='Pro forma'?'Pro forma':'Facture')&&meta.instructions===(clean(b.instructions,2000)||issuer.paymentInstructions||'')&&meta.serviceAction===clean(b.serviceAction,1000)&&meta.requiresPayment===(b.requiresPayment===true)&&meta.dueDate===clean(b.dueDate,10);
+    if(!unchanged)return json({error:'Une demande a déjà été publiée depuis ce formulaire avec un contenu différent. Rouvrez le dossier et utilisez Rectifier pour corriger le document existant.',existingInvoiceId:prior.id},409);
+    return json({ok:true,id:prior.id});
+   }
+  }
   const created=new Date().toISOString(),id=requestKey||uid(),number='TD-'+(original?'R-':'')+new Date().getUTCFullYear()+'-'+uid().slice(0,10).toUpperCase(),signer=clean(b.signer)||original?.signer,reason=clean(b.reason,1000),stage=original?.stage||clean(b.stage),provider=original?.provider||clean(b.provider);
   if(b.dueDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(b.dueDate)||!Number.isFinite(Date.parse(b.dueDate))))return json({error:'Échéance invalide.'},400);
   const meta={title:clean(b.title,200)||reason,serviceAction:clean(b.serviceAction,1000),requiresPayment:b.requiresPayment===true,dueDate:clean(b.dueDate,10),documentKind:b.documentKind==='Pro forma'?'Pro forma':'Facture',kind:!original&&b.documentKind==='Pro forma'?'PRO FORMA':undefined,displayMoney:money,issuer,instructions:clean(b.instructions,2000)||issuer.paymentInstructions||'',category:clean(b.serviceCategory),justificationDocument:justification,serviceId:clean(b.serviceId),...(original?{kind:b.kind,rectifies:original.number}:{})};

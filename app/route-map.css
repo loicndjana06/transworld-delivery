@@ -1,0 +1,23 @@
+/* Map styles travel with the map module, independently of cached application CSS. */
+.route-map .tracking-map-canvas{display:block;position:relative;isolation:isolate;z-index:0;min-height:400px;background:#dce9ed;overflow:hidden;font-family:Arial,Helvetica,sans-serif}
+.route-map .tracking-map-canvas img.leaflet-tile{max-width:none!important;max-height:none!important;padding:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;object-fit:fill!important;mix-blend-mode:normal!important}
+.route-map .tracking-map-canvas .leaflet-pane{position:absolute;top:0;left:0}
+.route-map .tracking-map-canvas .leaflet-tile-loaded{visibility:visible}
+.route-map .map-tools{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px}
+.route-map .map-tools .btn{min-height:44px;font-size:12px}
+.route-map .map-route-strip{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px;background:#f0f6f6;padding:16px;margin:0 0 16px;border-radius:8px;color:#126474}
+.route-map .map-route-strip small{display:block;font-size:10px;letter-spacing:.08em;margin-bottom:5px}
+.route-map .map-route-strip strong{display:block;font-size:13px;overflow-wrap:anywhere}
+.route-map .map-route-strip div:last-child{text-align:right}
+.route-map .map-caption{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;font-size:12px}
+.route-map .map-caption>div{display:flex;align-items:center;gap:8px;min-width:0}
+.route-map .map-caption span{overflow-wrap:anywhere}
+.route-map .map-legend{display:flex;flex-wrap:wrap;gap:16px;margin:14px 0;font-size:12px}
+.route-map .map-legend span{display:flex;align-items:center;gap:7px}
+.route-map .map-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;background:#126474}
+.route-map .map-legend .legend-planned{background:#b29354}
+.route-map .map-warning{padding:12px;background:#fff6e6;border:1px solid #ead3a9;border-radius:7px;color:#77511a;margin-top:10px}
+.route-map .map-loading{padding:10px 0}
+.route-map .map-external-link{display:inline-block;color:#126474;text-decoration:underline;font-size:12px;padding:10px 0;min-height:44px}
+.route-map .leaflet-popup-content{max-width:calc(100vw - 105px);overflow-wrap:anywhere}
+@media(max-width:540px){.route-map .map-route-strip{gap:8px;padding:12px}.route-map .map-route-strip strong{font-size:11px}.route-map .map-tools .btn{flex:1;padding:10px}.route-map .tracking-map-canvas{min-height:400px}}

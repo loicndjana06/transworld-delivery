@@ -1,6 +1,7 @@
 'use client';
 import {bearing,routeGeometry,type RouteConfig} from './maritime';
 import { tr } from './i18n';
+import './route-map.css';
 import { useEffect, useRef, useState } from 'react';
 import { Ship, Plane, Truck, MapPin, Maximize, RefreshCw } from 'lucide-react';
 
@@ -43,6 +44,10 @@ export default function RouteMap({ events, reference = '',mode='',origin='',dest
     let dead = false;
     let mapInstance: any = null;
     let resizeObserver: ResizeObserver | null = null;
+    let tileWatchdog: ReturnType<typeof setTimeout> | null = null;
+    let receivedTile = false;
+    const controller = new AbortController();
+    const configTimeout = setTimeout(() => controller.abort(), 5000);
 
     setReady(false);
     setError('');
@@ -50,10 +55,11 @@ export default function RouteMap({ events, reference = '',mode='',origin='',dest
 
     if (!host.current) return;
 
-    fetch('/api/config?ref=' + encodeURIComponent(reference))
+    fetch('/api/config?ref=' + encodeURIComponent(reference), {signal: controller.signal})
       .then(r => r.ok?r.json():{})
       .catch(()=>({}))
       .then(async (c: any) => {
+        clearTimeout(configTimeout);
         if (dead || !host.current) return;
 
         try {
@@ -70,8 +76,8 @@ export default function RouteMap({ events, reference = '',mode='',origin='',dest
           const attribution = c.attribution || '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
 
           const map = L.map(host.current, {
-            center: [last?.lat ?? points[0]?.lat ?? 12, last?.lng ?? points[0]?.lng ?? 25],
-            zoom: points.length?5:2,
+            center: [displayPosition?.lat ?? points[0]?.lat ?? 12, displayPosition?.lng ?? points[0]?.lng ?? 25],
+            zoom: points.length ? 9 : 2,
             zoomControl: true,
             attributionControl: true,
             scrollWheelZoom: 'center',
@@ -80,11 +86,14 @@ export default function RouteMap({ events, reference = '',mode='',origin='',dest
           if(geometry.length>1)L.polyline(geometry,{color:"#b29354",weight:3,dashArray:"6,8",opacity:.85}).addTo(map);
 
           // Tile Layer following OpenStreetMap usage policy (on-demand only, visible attribution, no prefetch)
+          tileWatchdog = setTimeout(() => {
+            if (!dead && !receivedTile) setError('Le fond cartographique ne répond pas. Les coordonnées sont conservées. Réessayez ou ouvrez la carte détaillée.');
+          }, 12000);
           const tiles=L.tileLayer(tileUrl, {
             attribution,
             maxZoom: 19,
             subdomains: ['a', 'b', 'c'],
-          }).on('tileload',()=>{if(!dead){setTilesLoaded(true);setError('');}}).on('tileerror',()=>{if(!dead)setError('Le fond de carte n’a pas pu être chargé. Vérifiez votre connexion puis réessayez.');}).addTo(map);
+          }).on('tileload',()=>{if(!dead){receivedTile=true;if(tileWatchdog)clearTimeout(tileWatchdog);setTilesLoaded(true);setError('');}}).on('tileerror',()=>{if(!dead&&!receivedTile)setError('Le fond cartographique est indisponible. Les coordonnées sont conservées. Réessayez ou ouvrez la carte détaillée.');}).addTo(map);
 
           // Confirmed route polyline
           if (!route&&actual.length > 1) {
@@ -166,13 +175,16 @@ export default function RouteMap({ events, reference = '',mode='',origin='',dest
                 ${point.note ? `<div style="margin-top:4px;color:#352b25;font-size:11px;border-top:1px solid #eee;padding-top:4px;">${escapeHtml(point.note)}</div>` : ''}
               </div>
             `;
-            marker.bindPopup(popupContent);
+            marker.bindPopup(popupContent, {maxWidth: 270, maxHeight: 120, autoPan: false});
             marker.bindTooltip(escapeHtml(point.place));
             if(isVehicle)marker.openPopup();
           }
 
-          if (bounds.isValid()) {
-            map.fitBounds(bounds, { padding: [45, 45], maxZoom: 13 });
+          // Start around the published location; the complete route remains one click away.
+          if (displayPosition) {
+            map.setView([displayPosition.lat, displayPosition.lng], 9);
+          } else if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [45, 45], maxZoom: 9 });
           }
 
           resizeObserver = new ResizeObserver(() => {
@@ -181,7 +193,7 @@ export default function RouteMap({ events, reference = '',mode='',origin='',dest
           resizeObserver.observe(host.current);
 
           setReady(true);
-          requestAnimationFrame(()=>{if(!dead){map.invalidateSize({pan:false});if(bounds.isValid())map.fitBounds(bounds,{padding:[45,45],maxZoom:13});tiles.redraw();}});
+          requestAnimationFrame(()=>{if(!dead){map.invalidateSize({pan:false});tiles.redraw();}});
         } catch (err: any) {
           if (!dead) {
             console.error('Erreur Leaflet:', err);
@@ -195,6 +207,10 @@ export default function RouteMap({ events, reference = '',mode='',origin='',dest
 
     return () => {
       dead = true;
+      controller.abort();
+      clearTimeout(configTimeout);
+      if (tileWatchdog) clearTimeout(tileWatchdog);
+      mapRef.current = null;
       if (resizeObserver) resizeObserver.disconnect();
       if (mapInstance) {
         mapInstance.remove();
@@ -235,10 +251,10 @@ export default function RouteMap({ events, reference = '',mode='',origin='',dest
         </button>
       </div>
 
-      <div className="map-tools"><button type="button" className="btn secondary" onClick={()=>{const bounds=[...points.map(p=>[p.lat,p.lng]),...geometry];if(bounds.length)mapRef.current?.fitBounds(bounds,{padding:[35,35],maxZoom:13});}}>Voir tout le trajet</button><button type="button" className="btn secondary" disabled={!displayPosition} onClick={()=>{if(displayPosition)mapRef.current?.setView([displayPosition.lat,displayPosition.lng],7);}}>Dernière position publiée</button></div><div className="map-route-strip"><div><small>DÉPART</small><strong>{origin||'Départ à confirmer'}</strong></div><Icon size={28}/><div><small>DESTINATION</small><strong>{destination||'Arrivée à confirmer'}</strong></div></div>
+      <div className="map-tools"><button type="button" className="btn secondary" onClick={()=>{const bounds=[...points.map(p=>[p.lat,p.lng]),...geometry];if(bounds.length)mapRef.current?.fitBounds(bounds,{padding:[35,35],maxZoom:13});}}>Voir tout le trajet</button><button type="button" className="btn secondary" disabled={!displayPosition} onClick={()=>{if(displayPosition)mapRef.current?.setView([displayPosition.lat,displayPosition.lng],11);}}>Dernière position publiée</button></div><div className="map-route-strip"><div><small>DÉPART</small><strong>{origin||'Départ à confirmer'}</strong></div><Icon size={28}/><div><small>DESTINATION</small><strong>{destination||'Arrivée à confirmer'}</strong></div></div>
       <div
         ref={host}
-        className={'google-map ' + (ready ? 'ready' : '')}
+        className={'google-map tracking-map-canvas ' + (ready ? 'ready' : '')}
         style={{ display:'block',height: '440px', width: '100%', borderRadius: '7px',background:'#dce9ed' }}
         aria-label={tr('Carte interactive OpenStreetMap des étapes')}
       />
@@ -319,10 +335,11 @@ export default function RouteMap({ events, reference = '',mode='',origin='',dest
       </div>
 
       <div className="map-legend"><span><i className="legend-confirmed"/> Étape confirmée</span><span><i className="legend-planned"/> Étape prévue</span></div><p className="tiny muted">{displayPosition?.estimated?"Zone estimée publiée séparément des positions confirmées.":actual.length?"Les étapes datées sont confirmées et publiées par votre transporteur. Le tracé du parcours prévu reste distinct des positions publiées.":"Les positions publiées par votre transporteur apparaîtront sur cette carte."}</p>
-      {ready&&!tilesLoaded&&!error&&<p className="tiny muted">Chargement du fond cartographique…</p>}
+      {(!ready||!tilesLoaded)&&!error&&<p role="status" className="tiny muted map-loading">Chargement de la carte détaillée : villes, côtes et routes…</p>}
+      {displayPosition&&<a className="map-external-link" href={'https://www.openstreetmap.org/?mlat='+displayPosition.lat+'&mlon='+displayPosition.lng+'#map=11/'+displayPosition.lat+'/'+displayPosition.lng} target="_blank" rel="noopener noreferrer">Ouvrir la carte détaillée dans un nouvel onglet</a>}
       {error && (
-        <p className="tiny muted map-warning">
-          {tr(error)} {tr('Ce schéma ne représente pas une position GPS en direct.')}
+        <p role="status" className="tiny muted map-warning">
+          {tr(error)}
         </p>
       )}
     </section>

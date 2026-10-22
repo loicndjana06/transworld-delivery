@@ -1,5 +1,5 @@
 import {PDFDocument,rgb} from 'pdf-lib';
-import {formatMoney} from './money';
+import {formatMoney,invoiceMoney} from './money';
 import fontkit from '@pdf-lib/fontkit';
 import {regular,bold as boldData} from './pdf-fonts';
 const fontBytes=(data:string)=>Uint8Array.from(atob(data),c=>c.charCodeAt(0));
@@ -7,7 +7,7 @@ const normalBytes=fontBytes(regular),boldBytes=fontBytes(boldData);
 async function fonts(pdf:PDFDocument){pdf.registerFontkit(fontkit);return {font:await pdf.embedFont(normalBytes,{subset:true}),bold:await pdf.embedFont(boldBytes,{subset:true})};}
 function tokens(text:any,font:any,size:number){return plain(text).split(' ').flatMap(word=>{if(font.widthOfTextAtSize(word,size)<=490)return [word];const chunks:string[]=[];let part='';for(const ch of word){if(part&&font.widthOfTextAtSize(part+ch,size)>490){chunks.push(part);part=ch;}else part+=ch;}if(part)chunks.push(part);return chunks;});}
 const plain=(s:any)=>String(s||'').replace(/[\u0000-\u001f\u007f]/g,' ');
-export async function invoicePdf(s:any,i:any){const pdf=await PDFDocument.create(),{font,bold}=await fonts(pdf);let page=pdf.addPage([595,842]),y=790;
+export async function invoicePdf(s:any,i:any){i={...i,displayMoney:invoiceMoney(i)};const pdf=await PDFDocument.create(),{font,bold}=await fonts(pdf);let page=pdf.addPage([595,842]),y=790;
  const write=(text:string,size=11,b=false)=>{const words=tokens(text,b?bold:font,size);let line='';for(const word of words){const next=line?line+' '+word:word;if(font.widthOfTextAtSize(next,size)>490&&line){if(y<55){page=pdf.addPage([595,842]);y=790;}page.drawText(line,{x:/[\u0600-\u06ff]/.test(line)?540-(b?bold:font).widthOfTextAtSize(line,size):50,y,size,font:b?bold:font,color:rgb(.07,.25,.29)});y-=size+5;line=word;}else line=next;}if(line){if(y<55){page=pdf.addPage([595,842]);y=790;}page.drawText(line,{x:/[\u0600-\u06ff]/.test(line)?540-(b?bold:font).widthOfTextAtSize(line,size):50,y,size,font:b?bold:font,color:rgb(.07,.25,.29)});y-=size+5;}};
  page.drawRectangle({x:0,y:735,width:595,height:107,color:rgb(.06,.18,.24)});page.drawRectangle({x:0,y:732,width:595,height:3,color:rgb(.73,.59,.35)});page.drawRectangle({x:50,y:750,width:38,height:38,color:rgb(.73,.59,.35)});page.drawText('TD',{x:57,y:763,size:16,font:bold,color:rgb(1,1,1)});page.drawText('TRANSWORLD DELIVERY',{x:103,y:765,size:21,font:bold,color:rgb(1,1,1)});y=698;
  if(s.assets?.logo){try{const im=s.assets.logo.mime==='image/png'?await pdf.embedPng(s.assets.logo.bytes):await pdf.embedJpg(s.assets.logo.bytes);const f=Math.min(38/im.width,38/im.height);page.drawRectangle({x:50,y:750,width:38,height:38,color:rgb(1,1,1)});page.drawImage(im,{x:50+(38-im.width*f)/2,y:750+(38-im.height*f)/2,width:im.width*f,height:im.height*f});}catch{}}
